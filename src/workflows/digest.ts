@@ -10,7 +10,6 @@ import {
   parseLLMJson,
   SummaryResponseSchema,
   ExtractedClaimsSchema,
-  ClaimSchema,
   type SummaryResponse,
   type ExtractedClaims,
 } from "../utils/parse-llm-json";
@@ -73,16 +72,33 @@ const FetchedPostSchema = z.object({
   }),
 });
 
+// Schema for summary response - with required fields (defaults are applied during parsing)
+const WorkflowSummarySchema = z.object({
+  summary: z.string(),
+  notable_comments: z.array(z.string()),
+  sentiment: z.enum(["positive", "negative", "mixed", "neutral"]),
+  key_topics: z.array(z.string()),
+});
+
+// Schema for claim - with required fields (defaults are applied during parsing)
+const WorkflowClaimSchema = z.object({
+  subject: z.string(),
+  predicate: z.string(),
+  object: z.string(),
+  confidence: z.number().min(0).max(1),
+  source_stance: z.enum(["agrees", "disagrees", "neutral", "uncertain"]),
+});
+
 // Schema for post with summary
 const PostWithSummarySchema = z.object({
   subreddit: z.string(),
   post: RedditPostDataSchema,
-  summary: SummaryResponseSchema,
+  summary: WorkflowSummarySchema,
 });
 
 // Schema for post with summary and claims
 const PostWithClaimsSchema = PostWithSummarySchema.extend({
-  claims: z.array(ClaimSchema),
+  claims: z.array(WorkflowClaimSchema),
   commenter_stances: z.object({
     agree_percentage: z.number().optional(),
     disagree_percentage: z.number().optional(),
@@ -97,7 +113,7 @@ const DigestWithDataSchema = z.object({
   claims_extracted: z.number(),
   date: z.string(),
   summaries_with_claims: z.array(PostWithClaimsSchema),
-  all_claims: z.array(ClaimSchema),
+  all_claims: z.array(WorkflowClaimSchema),
 });
 
 // Step 1: Fetch Reddit content
@@ -252,7 +268,7 @@ const extractClaimsStep = createStep({
   }),
   outputSchema: z.object({
     summaries_with_claims: z.array(PostWithClaimsSchema),
-    all_claims: z.array(ClaimSchema),
+    all_claims: z.array(WorkflowClaimSchema),
     date: z.string(),
   }),
   execute: async ({ inputData }) => {
@@ -261,7 +277,7 @@ const extractClaimsStep = createStep({
     const agent = getExtractorAgent();
 
     console.log(`\nExtracting claims from ${summaries.length} posts...`);
-    const allClaims: z.infer<typeof ClaimSchema>[] = [];
+    const allClaims: z.infer<typeof WorkflowClaimSchema>[] = [];
     const summariesWithClaims: z.infer<typeof PostWithClaimsSchema>[] = [];
 
     for (const item of summaries) {
@@ -321,15 +337,22 @@ Extract claims as RDF triples and analyze commenter stances. Return JSON.`;
           console.warn(`JSON parse warning for claims from ${post.id}: ${error}`);
         }
 
+        // Normalize claims to ensure all fields have values (Zod defaults are applied during parsing)
+        const normalizedClaims = (extracted.claims || []).map((c) => ({
+          subject: c.subject,
+          predicate: c.predicate,
+          object: c.object,
+          confidence: c.confidence ?? 0.5,
+          source_stance: c.source_stance ?? "neutral" as const,
+        }));
+
         summariesWithClaims.push({
           ...item,
-          claims: extracted.claims,
+          claims: normalizedClaims,
           commenter_stances: extracted.commenter_stances,
         });
 
-        if (extracted.claims) {
-          allClaims.push(...extracted.claims);
-        }
+        allClaims.push(...normalizedClaims);
       } catch (error) {
         if (error instanceof BudgetExceededError) {
           console.error(`Budget exceeded, skipping remaining claims extraction. ${error.message}`);
@@ -363,7 +386,7 @@ const generateDigestStep = createStep({
   id: "generate-digest",
   inputSchema: z.object({
     summaries_with_claims: z.array(PostWithClaimsSchema),
-    all_claims: z.array(ClaimSchema),
+    all_claims: z.array(WorkflowClaimSchema),
     date: z.string(),
   }),
   outputSchema: DigestWithDataSchema,
