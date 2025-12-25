@@ -93,6 +93,7 @@ const WorkflowClaimSchema = z.object({
 const PostWithSummarySchema = z.object({
   subreddit: z.string(),
   post: RedditPostDataSchema,
+  comments: z.array(RedditCommentSchema),
   summary: WorkflowSummarySchema,
 });
 
@@ -239,6 +240,7 @@ Provide a JSON response with summary, notable_comments, sentiment, and key_topic
         summaries.push({
           subreddit,
           post,
+          comments,
           summary: normalizedSummary,
         });
       } catch (error) {
@@ -250,6 +252,7 @@ Provide a JSON response with summary, notable_comments, sentiment, and key_topic
         summaries.push({
           subreddit,
           post,
+          comments,
           summary: {
             summary: "Failed to summarize",
             notable_comments: [],
@@ -495,10 +498,11 @@ const saveToDatabaseStep = createStep({
 
       const savedPostIds: string[] = [];
       const savedClaimIds: string[] = [];
+      let savedCommentCount = 0;
 
       // Save posts and their comments
       for (const item of summaries_with_claims) {
-        const { post, subreddit } = item;
+        const { post, subreddit, comments } = item;
 
         // Upsert post
         const postResult = await db.query<any[][]>(
@@ -520,6 +524,27 @@ const saveToDatabaseStep = createStep({
         const postId = postResult[0]?.[0]?.id;
         if (postId) {
           savedPostIds.push(postId);
+
+          // Save comments for this post
+          if (comments && comments.length > 0) {
+            for (const comment of comments) {
+              await db.query(
+                `INSERT INTO comment (reddit_id, post, author, content, score, parent_id, created_at)
+                 VALUES ($reddit_id, $post, $author, $content, $score, $parent_id, $created_at)
+                 ON DUPLICATE KEY UPDATE score = $score`,
+                {
+                  reddit_id: comment.id,
+                  post: postId,
+                  author: comment.author,
+                  content: comment.body,
+                  score: comment.score,
+                  parent_id: comment.parent_id,
+                  created_at: new Date(comment.created_utc * 1000).toISOString(),
+                }
+              );
+              savedCommentCount++;
+            }
+          }
         }
       }
 
@@ -588,7 +613,7 @@ const saveToDatabaseStep = createStep({
 
       await db.query("COMMIT TRANSACTION");
 
-      console.log(`Saved ${savedPostIds.length} posts and ${savedClaimIds.length} claims to database`);
+      console.log(`Saved ${savedPostIds.length} posts, ${savedCommentCount} comments, and ${savedClaimIds.length} claims to database`);
     } catch (error) {
       // Rollback on error
       await db.query("CANCEL TRANSACTION").catch(() => {});

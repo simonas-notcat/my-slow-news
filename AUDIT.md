@@ -368,3 +368,94 @@ const saveToDatabaseStep = createStep({
 1. **Sequential processing** - Could parallelize with p-limit for better performance
 2. **Schema migration strategy** - Would need migration tracking table
 3. **Unused tool assignments** - Tools assigned to agents but not used in workflow
+
+---
+
+## Additional Audit (2025-12-25)
+
+### New Findings and Fixes
+
+#### 1. Reddit API Retry Logic (MEDIUM) ✅ FIXED
+
+**Location:** `src/reddit/client.ts`
+
+**Issue:** Reddit API calls had no retry logic for transient failures (rate limits, network errors).
+
+**Fix:** Added `withRetry` wrapper to all Reddit API calls (token fetch, posts, comments) with exponential backoff.
+
+---
+
+#### 2. Input Validation for Subreddit Names (MEDIUM) ✅ FIXED
+
+**Location:** `src/reddit/client.ts`
+
+**Issue:** Subreddit names were not validated, allowing potential URL injection.
+
+**Fix:** Added `validateSubredditName()` function that validates subreddit names match Reddit's format (3-21 alphanumeric chars).
+
+---
+
+#### 3. Comments Not Persisted to Database (MEDIUM) ✅ FIXED
+
+**Location:** `src/workflows/digest.ts`
+
+**Issue:** Comments were fetched but never saved to the database - only posts and claims were persisted.
+
+**Fix:**
+- Updated workflow schemas to pass comments through all steps
+- Added comment persistence in `save-to-database` step with upsert logic
+
+---
+
+#### 4. Enhanced Date Validation in CLI (LOW) ✅ FIXED
+
+**Location:** `src/cli/digest.ts`
+
+**Issue:** Date validation was basic; didn't catch invalid dates like `2024-02-30`.
+
+**Fix:**
+- Enhanced `isValidDate()` to verify parsed date components match input
+- Added `isFutureDate()` check with warning for future dates
+
+---
+
+#### 5. Graceful Shutdown Handling (LOW) ✅ FIXED
+
+**Location:** `src/cli/digest.ts`
+
+**Issue:** No graceful shutdown handling for SIGINT/SIGTERM signals.
+
+**Fix:** Added signal handlers that close database connection before exit.
+
+---
+
+#### 6. Duplicate Sleep Utility (LOW) ✅ FIXED
+
+**Location:** `src/reddit/index.ts`, `src/utils/retry.ts`
+
+**Issue:** `sleep` function was defined in multiple files.
+
+**Fix:** Exported `sleep` from `src/utils/retry.ts` and updated reddit module to use it.
+
+---
+
+### Updated Priority Matrix
+
+| Finding | Severity | Effort | Status |
+|---------|----------|--------|--------|
+| Reddit API retry logic | MEDIUM | Low | ✅ FIXED |
+| Subreddit name validation | MEDIUM | Low | ✅ FIXED |
+| Comments not persisted | MEDIUM | Medium | ✅ FIXED |
+| Enhanced date validation | LOW | Low | ✅ FIXED |
+| Graceful shutdown | LOW | Low | ✅ FIXED |
+| Duplicate sleep utility | LOW | Low | ✅ FIXED |
+
+### Commits
+
+3. **Code audit improvements** (current)
+   - Added retry logic to all Reddit API calls
+   - Added subreddit name validation to prevent URL injection
+   - Implemented comment persistence in database workflow
+   - Enhanced CLI date validation with future date warning
+   - Added graceful shutdown handling with SIGINT/SIGTERM
+   - Consolidated sleep utility to avoid duplication

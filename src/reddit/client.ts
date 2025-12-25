@@ -1,4 +1,8 @@
 import type { RedditPost, RedditComment, Config } from "../types";
+import { withRetry } from "../utils/retry";
+
+// Rate limit errors that should trigger retry
+const REDDIT_RETRY_PATTERNS = ["429", "rate limit", "503", "ECONNRESET", "ETIMEDOUT"];
 
 interface RedditAuthToken {
   access_token: string;
@@ -27,21 +31,31 @@ export async function getAccessToken(
 
   const auth = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
 
-  const response = await fetch("https://www.reddit.com/api/v1/access_token", {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${auth}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-      "User-Agent": "MySlowNews/0.1.0",
+  const fetchToken = async () => {
+    const response = await fetch("https://www.reddit.com/api/v1/access_token", {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${auth}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "MySlowNews/0.1.0",
+      },
+      body: "grant_type=client_credentials",
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to get Reddit access token: ${response.status}`);
+    }
+
+    return response.json();
+  };
+
+  const data = await withRetry(fetchToken, {
+    maxAttempts: 3,
+    retryableErrors: REDDIT_RETRY_PATTERNS,
+    onRetry: (err, attempt, delay) => {
+      console.warn(`Reddit auth retry ${attempt} after ${delay}ms: ${err.message}`);
     },
-    body: "grant_type=client_credentials",
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to get Reddit access token: ${response.status}`);
-  }
-
-  const data = await response.json();
 
   cachedToken = {
     ...data,
@@ -49,6 +63,15 @@ export async function getAccessToken(
   };
 
   return cachedToken!.access_token;
+}
+
+// Validate subreddit name to prevent URL injection
+function validateSubredditName(subreddit: string): void {
+  // Subreddit names: 3-21 chars, alphanumeric + underscore, no leading underscore
+  const validPattern = /^[a-zA-Z0-9][a-zA-Z0-9_]{2,20}$/;
+  if (!validPattern.test(subreddit)) {
+    throw new Error(`Invalid subreddit name: "${subreddit}". Must be 3-21 alphanumeric characters.`);
+  }
 }
 
 export async function fetchSubredditPosts(
@@ -59,25 +82,36 @@ export async function fetchSubredditPosts(
     timeframe?: "hour" | "day" | "week" | "month" | "year" | "all";
   } = {}
 ): Promise<RedditPost[]> {
+  validateSubredditName(subreddit);
   const { limit = 25, timeframe = "day" } = options;
 
-  const response = await fetch(
-    `https://oauth.reddit.com/r/${subreddit}/top?t=${timeframe}&limit=${limit}`,
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "User-Agent": "MySlowNews/0.1.0",
-      },
-    }
-  );
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch r/${subreddit}: ${response.status} ${response.statusText}`
+  const fetchPosts = async () => {
+    const response = await fetch(
+      `https://oauth.reddit.com/r/${subreddit}/top?t=${timeframe}&limit=${limit}`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "User-Agent": "MySlowNews/0.1.0",
+        },
+      }
     );
-  }
 
-  const data = await response.json();
+    if (!response.ok) {
+      throw new Error(
+        `Failed to fetch r/${subreddit}: ${response.status} ${response.statusText}`
+      );
+    }
+
+    return response.json();
+  };
+
+  const data = await withRetry(fetchPosts, {
+    maxAttempts: 3,
+    retryableErrors: REDDIT_RETRY_PATTERNS,
+    onRetry: (err, attempt, delay) => {
+      console.warn(`Retry ${attempt} for r/${subreddit} after ${delay}ms: ${err.message}`);
+    },
+  });
 
   return data.data.children.map((child: any) => ({
     id: child.data.id,
@@ -99,23 +133,34 @@ export async function fetchPostComments(
   accessToken: string,
   options: { limit?: number; sort?: "top" | "best" | "new" } = {}
 ): Promise<RedditComment[]> {
+  validateSubredditName(subreddit);
   const { limit = 50, sort = "top" } = options;
 
-  const response = await fetch(
-    `https://oauth.reddit.com/r/${subreddit}/comments/${postId}?sort=${sort}&limit=${limit}`,
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "User-Agent": "MySlowNews/0.1.0",
-      },
+  const fetchComments = async () => {
+    const response = await fetch(
+      `https://oauth.reddit.com/r/${subreddit}/comments/${postId}?sort=${sort}&limit=${limit}`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "User-Agent": "MySlowNews/0.1.0",
+        },
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch comments for ${postId}: ${response.status}`);
     }
-  );
 
-  if (!response.ok) {
-    throw new Error(`Failed to fetch comments for ${postId}: ${response.status}`);
-  }
+    return response.json();
+  };
 
-  const data = await response.json();
+  const data = await withRetry(fetchComments, {
+    maxAttempts: 3,
+    retryableErrors: REDDIT_RETRY_PATTERNS,
+    onRetry: (err, attempt, delay) => {
+      console.warn(`Retry ${attempt} for comments ${postId} after ${delay}ms: ${err.message}`);
+    },
+  });
 
   // Comments are in the second element of the response array
   const commentsData = data[1]?.data?.children || [];

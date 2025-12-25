@@ -19,7 +19,10 @@ const DEFAULT_OPTIONS: Required<Omit<RetryOptions, "onRetry">> = {
   retryableErrors: ["rate_limit", "timeout", "ECONNRESET", "ETIMEDOUT", "503", "529"],
 };
 
-function sleep(ms: number): Promise<void> {
+/**
+ * Sleeps for the specified number of milliseconds
+ */
+export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 

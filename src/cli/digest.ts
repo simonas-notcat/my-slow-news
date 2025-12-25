@@ -1,11 +1,48 @@
 #!/usr/bin/env bun
 import { program } from "commander";
 import { runDigestWorkflow } from "../workflows/digest";
+import { closeDb } from "../db";
 
 function isValidDate(dateStr: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    return false;
+  }
   const date = new Date(dateStr);
-  return !isNaN(date.getTime()) && /^\d{4}-\d{2}-\d{2}$/.test(dateStr);
+  if (isNaN(date.getTime())) {
+    return false;
+  }
+  // Validate it's a real date (handles cases like 2024-02-30)
+  const [year, month, day] = dateStr.split("-").map(Number);
+  return date.getFullYear() === year &&
+         date.getMonth() === month - 1 &&
+         date.getDate() === day;
 }
+
+function isFutureDate(dateStr: string): boolean {
+  const date = new Date(dateStr);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return date > today;
+}
+
+// Graceful shutdown handling
+let isShuttingDown = false;
+
+async function gracefulShutdown(signal: string): Promise<void> {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+
+  console.log(`\nReceived ${signal}, shutting down gracefully...`);
+  try {
+    await closeDb();
+  } catch (error) {
+    // Ignore errors during shutdown
+  }
+  process.exit(0);
+}
+
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 
 program
   .name("digest")
@@ -54,6 +91,10 @@ program
         }
 
         const date = options.date || new Date().toISOString().split("T")[0];
+
+        if (isFutureDate(date)) {
+          console.warn(`Warning: ${date} is in the future. Reddit data may be incomplete.`);
+        }
         console.log(`Generating digest for: ${date}\n`);
         const result = await runDigestWorkflow(date);
 
