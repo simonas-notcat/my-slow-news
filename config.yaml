@@ -3,10 +3,10 @@
 sources:
   reddit:
     subreddits:
-      - programming
-      - rust
-      - typescript
-      - selfhosted
+      - ClaudeAI
+      - omarchy
+      - mpcusers
+      - AbletonMove
     posts_per_subreddit: 5
     lookback_hours: 24
     min_relative_score: 1.0  # multiplier of subreddit average
