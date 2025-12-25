@@ -26,5 +26,5 @@ database:
   namespace: myslownews
   database: main
   # Credentials are loaded from environment variables:
-  # SURREALDB_USERNAME (default: root)
-  # SURREALDB_PASSWORD (default: root)
+  # SURREALDB_USERNAME (required)
+  # SURREALDB_PASSWORD (required)
