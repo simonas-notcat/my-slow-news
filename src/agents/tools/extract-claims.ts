@@ -21,9 +21,10 @@ export const extractClaimsTool = createTool({
   outputSchema: z.object({
     valid_claims: z.array(ClaimSchema),
     invalid_count: z.number(),
+    post_id: z.string(),
   }),
   execute: async ({ context }) => {
-    const { claims } = context;
+    const { claims, post_id } = context;
 
     // Filter out low-confidence claims
     const validClaims = claims.filter((c) => c.confidence >= 0.5);
@@ -31,6 +32,7 @@ export const extractClaimsTool = createTool({
     return {
       valid_claims: validClaims,
       invalid_count: claims.length - validClaims.length,
+      post_id,
     };
   },
 });

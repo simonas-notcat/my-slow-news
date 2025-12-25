@@ -58,12 +58,16 @@ program
         { subject, predicate, object }
       );
 
-      let claimId: string;
+      let claimId: string | undefined;
 
       if (existingClaim[0]?.length > 0) {
-        claimId = existingClaim[0][0].id;
-        console.log(`\nFound existing claim: ${claimId}`);
-      } else {
+        claimId = existingClaim[0]?.[0]?.id;
+        if (claimId) {
+          console.log(`\nFound existing claim: ${claimId}`);
+        }
+      }
+
+      if (!claimId) {
         // Create new claim
         const newClaim = await db.query<any[][]>(
           `CREATE claim SET
@@ -75,6 +79,11 @@ program
           { subject, predicate, object }
         );
         claimId = newClaim[0]?.[0]?.id;
+        if (!claimId) {
+          console.error("Error: Failed to create claim in database");
+          await closeDb();
+          process.exit(1);
+        }
         console.log(`\nCreated new claim: ${claimId}`);
       }
 
@@ -85,16 +94,20 @@ program
       );
 
       if (existingStances[0]?.length > 0) {
-        await db.query(
+        const updateResult = await db.query<any[][]>(
           `UPDATE claim_stances SET
             user_stance = $stance,
             user_note = $note
           WHERE claim = $claimId`,
           { claimId, stance: stanceMap[stance], note: options.note || null }
         );
-        console.log("Updated existing stance record");
+        if (!updateResult[0]?.length) {
+          console.error("Warning: Stance update may not have succeeded");
+        } else {
+          console.log("Updated existing stance record");
+        }
       } else {
-        await db.query(
+        const createResult = await db.query<any[][]>(
           `CREATE claim_stances SET
             claim = $claimId,
             content_author_stance = 'not-stated',
@@ -104,6 +117,11 @@ program
             user_note = $note`,
           { claimId, stance: stanceMap[stance], note: options.note || null }
         );
+        if (!createResult[0]?.length) {
+          console.error("Error: Failed to create stance record");
+          await closeDb();
+          process.exit(1);
+        }
         console.log("Created new stance record");
       }
 
