@@ -2,11 +2,27 @@ import Surreal from "surrealdb";
 import type { Config } from "../types";
 
 let db: Surreal | null = null;
+let lastConfig: Config | null = null;
 
-export async function getDb(config: Config): Promise<Surreal> {
-  if (db) return db;
+/**
+ * Check if the database connection is healthy
+ */
+async function isConnectionHealthy(): Promise<boolean> {
+  if (!db) return false;
 
-  // Require explicit credentials - no defaults
+  try {
+    // Simple health check query
+    await db.query("SELECT 1");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Creates a new database connection
+ */
+async function createConnection(config: Config): Promise<Surreal> {
   const username = process.env.SURREALDB_USERNAME;
   const password = process.env.SURREALDB_PASSWORD;
 
@@ -28,8 +44,7 @@ export async function getDb(config: Config): Promise<Surreal> {
       database: config.database.database,
     });
 
-    db = newDb;
-    return db;
+    return newDb;
   } catch (error) {
     // Clean up connection on any failure
     await newDb.close().catch(() => {});
@@ -46,9 +61,58 @@ export async function getDb(config: Config): Promise<Surreal> {
   }
 }
 
+/**
+ * Gets a database connection, reconnecting if necessary
+ */
+export async function getDb(config: Config): Promise<Surreal> {
+  // Check if existing connection is healthy
+  if (db && await isConnectionHealthy()) {
+    return db;
+  }
+
+  // Clean up dead connection
+  if (db) {
+    await db.close().catch(() => {});
+    db = null;
+  }
+
+  // Create new connection with retry
+  const maxRetries = 3;
+  let lastError: Error | undefined;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      db = await createConnection(config);
+      lastConfig = config;
+      return db;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+
+      if (attempt < maxRetries) {
+        const delay = Math.pow(2, attempt) * 1000; // Exponential backoff: 2s, 4s
+        console.warn(`Database connection attempt ${attempt} failed, retrying in ${delay}ms...`);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+  }
+
+  throw lastError || new Error("Failed to connect to database after retries");
+}
+
+/**
+ * Closes the database connection
+ */
 export async function closeDb(): Promise<void> {
   if (db) {
     await db.close();
     db = null;
+    lastConfig = null;
   }
+}
+
+/**
+ * Force reconnection on next getDb call
+ */
+export function invalidateConnection(): void {
+  db = null;
 }

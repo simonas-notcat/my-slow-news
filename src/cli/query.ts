@@ -2,6 +2,12 @@
 import { program } from "commander";
 import { loadConfig } from "../config";
 import { getDb, closeDb } from "../db";
+import type {
+  PredicateCount,
+  SubjectCount,
+  ClaimRecord,
+  ClaimWithStance,
+} from "../types";
 
 program
   .name("query")
@@ -27,7 +33,7 @@ program
       cutoff.setDate(cutoff.getDate() - days);
 
       // Find most common predicates (themes)
-      const predicates = await db.query<any[][]>(`
+      const [predicates] = await db.query<[PredicateCount[]]>(`
         SELECT predicate, count() as count
         FROM claim
         WHERE extracted_at >= $cutoff
@@ -38,12 +44,12 @@ program
 
       console.log("Top Predicates (Actions/Relationships):");
       console.log("----------------------------------------");
-      for (const p of predicates[0] || []) {
+      for (const p of predicates || []) {
         console.log(`  ${p.predicate}: ${p.count} claims`);
       }
 
       // Find most discussed subjects
-      const subjects = await db.query<any[][]>(`
+      const [subjects] = await db.query<[SubjectCount[]]>(`
         SELECT subject, count() as count
         FROM claim
         WHERE extracted_at >= $cutoff
@@ -54,7 +60,7 @@ program
 
       console.log("\nTop Subjects (Entities):");
       console.log("------------------------");
-      for (const s of subjects[0] || []) {
+      for (const s of subjects || []) {
         console.log(`  ${s.subject}: ${s.count} claims`);
       }
 
@@ -92,7 +98,7 @@ program
         FROM claim
         WHERE extracted_at >= $cutoff
       `;
-      const params: Record<string, any> = { cutoff: cutoff.toISOString() };
+      const params: Record<string, string> = { cutoff: cutoff.toISOString() };
 
       if (options.subject) {
         query += ` AND subject CONTAINS $subject`;
@@ -109,18 +115,18 @@ program
 
       query += ` ORDER BY extracted_at DESC LIMIT 20`;
 
-      const claims = await db.query<any[][]>(query, params);
+      const [claims] = await db.query<[ClaimRecord[]]>(query, params);
 
       console.log("Claims Found:");
       console.log("-------------");
-      for (const claim of claims[0] || []) {
+      for (const claim of claims || []) {
         console.log(`  (${claim.subject}, ${claim.predicate}, ${claim.object})`);
         console.log(`    Confidence: ${Math.round(claim.confidence * 100)}%`);
         console.log(`    Extracted: ${claim.extracted_at}`);
         console.log();
       }
 
-      if (!claims[0]?.length) {
+      if (!claims?.length) {
         console.log("  No claims found matching criteria.");
       }
 
@@ -141,24 +147,26 @@ program
       const config = loadConfig();
       const db = await getDb(config);
 
-      const stances = await db.query<any[][]>(`
+      const [stances] = await db.query<[ClaimWithStance[]]>(`
         SELECT claim.subject, claim.predicate, claim.object, user_stance, user_note
         FROM claim_stances
         WHERE user_stance != NONE
         FETCH claim
       `);
 
-      for (const s of stances[0] || []) {
+      for (const s of stances || []) {
         const claim = s.claim;
-        console.log(`(${claim.subject}, ${claim.predicate}, ${claim.object})`);
-        console.log(`  Your stance: ${s.user_stance}`);
-        if (s.user_note) {
-          console.log(`  Note: ${s.user_note}`);
+        if (claim) {
+          console.log(`(${claim.subject}, ${claim.predicate}, ${claim.object})`);
+          console.log(`  Your stance: ${s.user_stance}`);
+          if (s.user_note) {
+            console.log(`  Note: ${s.user_note}`);
+          }
+          console.log();
         }
-        console.log();
       }
 
-      if (!stances[0]?.length) {
+      if (!stances?.length) {
         console.log("You haven't recorded any stances yet.");
         console.log('Use: bun run stance "Subject predicate Object" agree|disagree');
       }

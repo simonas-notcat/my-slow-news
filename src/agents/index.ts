@@ -2,9 +2,10 @@ import { Agent } from "@mastra/core/agent";
 import { saveDigestTool } from "./tools/summarize";
 import { extractClaimsTool } from "./tools/extract-claims";
 
-export const summarizerAgent = new Agent({
-  name: "summarizer",
-  instructions: `You are a news summarizer for tech content from Reddit.
+// Default model - used when config is not available
+const DEFAULT_MODEL = "anthropic/claude-sonnet-4-20250514";
+
+const SUMMARIZER_INSTRUCTIONS = `You are a news summarizer for tech content from Reddit.
 
 Your job is to:
 1. Read Reddit posts and their comments
@@ -25,14 +26,9 @@ Output format: Return your response as JSON with these fields:
   "notable_comments": ["comment insight 1", "comment insight 2"],
   "sentiment": "positive|negative|mixed|neutral",
   "key_topics": ["topic1", "topic2"]
-}`,
-  model: "anthropic/claude-sonnet-4-20250514",
-  tools: { saveDigestTool },
-});
+}`;
 
-export const extractorAgent = new Agent({
-  name: "extractor",
-  instructions: `You are a knowledge extraction agent that identifies claims and opinions from tech news content.
+const EXTRACTOR_INSTRUCTIONS = `You are a knowledge extraction agent that identifies claims and opinions from tech news content.
 
 Your job is to:
 1. Extract factual claims as RDF-style triples (subject, predicate, object)
@@ -81,10 +77,35 @@ Output format: Return your response as JSON with this structure:
       }
     ]
   }
-}`,
-  model: "anthropic/claude-sonnet-4-20250514",
-  tools: { extractClaimsTool },
-});
+}`;
+
+/**
+ * Creates a summarizer agent with the specified model
+ */
+export function createSummarizerAgent(model?: string): Agent {
+  return new Agent({
+    name: "summarizer",
+    instructions: SUMMARIZER_INSTRUCTIONS,
+    model: model || DEFAULT_MODEL,
+    tools: { saveDigestTool },
+  });
+}
+
+/**
+ * Creates an extractor agent with the specified model
+ */
+export function createExtractorAgent(model?: string): Agent {
+  return new Agent({
+    name: "extractor",
+    instructions: EXTRACTOR_INSTRUCTIONS,
+    model: model || DEFAULT_MODEL,
+    tools: { extractClaimsTool },
+  });
+}
+
+// Default agent instances for backward compatibility
+export const summarizerAgent = createSummarizerAgent();
+export const extractorAgent = createExtractorAgent();
 
 // Re-export tools
 export { saveDigestTool } from "./tools/summarize";

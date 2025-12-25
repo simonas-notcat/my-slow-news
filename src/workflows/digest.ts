@@ -13,6 +13,14 @@ import {
   type SummaryResponse,
   type ExtractedClaims,
 } from "../utils/parse-llm-json";
+import { withRetry } from "../utils/retry";
+import {
+  checkBudget,
+  recordUsage,
+  estimateTokens,
+  getUsageStats,
+  BudgetExceededError,
+} from "../utils/budget-tracker";
 
 // Schema for workflow input
 const DigestInputSchema = z.object({
@@ -77,6 +85,7 @@ const summarizeStep = createStep({
   }),
   execute: async ({ inputData }) => {
     const { posts, date } = inputData;
+    const config = loadConfig();
     const agent = getSummarizerAgent();
 
     console.log(`\nSummarizing ${posts.length} posts...`);
@@ -108,8 +117,30 @@ ${comments
 Provide a JSON response with summary, notable_comments, sentiment, and key_topics.`;
 
       try {
-        const result = await agent.generate(prompt);
+        // Check budget before making LLM call
+        const inputTokens = estimateTokens(prompt);
+        const estimatedOutputTokens = 500; // Rough estimate for summary
+        const budgetCheck = checkBudget(inputTokens, estimatedOutputTokens, config.llm.daily_budget_usd);
+
+        if (!budgetCheck.allowed) {
+          throw new BudgetExceededError(budgetCheck.remainingBudget, budgetCheck.estimatedCost);
+        }
+
+        // Use retry wrapper for transient failures
+        const result = await withRetry(
+          () => agent.generate(prompt),
+          {
+            maxAttempts: 3,
+            onRetry: (err, attempt, delay) => {
+              console.warn(`Retry ${attempt} for post ${post.id} after ${delay}ms: ${err.message}`);
+            },
+          }
+        );
+
         const text = typeof result === "string" ? result : result.text;
+
+        // Record actual usage (estimate output tokens from response)
+        recordUsage(inputTokens, estimateTokens(text));
 
         // Parse and validate JSON using robust parser
         const fallback: SummaryResponse = {
@@ -135,6 +166,10 @@ Provide a JSON response with summary, notable_comments, sentiment, and key_topic
           summary,
         });
       } catch (error) {
+        if (error instanceof BudgetExceededError) {
+          console.error(`Budget exceeded, skipping remaining posts. ${error.message}`);
+          break; // Stop processing more posts
+        }
         console.error(`Error summarizing post ${post.id}:`, error);
         summaries.push({
           subreddit,
@@ -148,6 +183,9 @@ Provide a JSON response with summary, notable_comments, sentiment, and key_topic
         });
       }
     }
+
+    const stats = getUsageStats();
+    console.log(`Usage: ${stats.requestCount} requests, $${stats.totalCost.toFixed(4)} spent today`);
 
     return { summaries, date };
   },
@@ -167,6 +205,7 @@ const extractClaimsStep = createStep({
   }),
   execute: async ({ inputData }) => {
     const { summaries, date } = inputData;
+    const config = loadConfig();
     const agent = getExtractorAgent();
 
     console.log(`\nExtracting claims from ${summaries.length} posts...`);
@@ -189,8 +228,30 @@ ${(summary.notable_comments || []).join("\n")}
 Extract claims as RDF triples and analyze commenter stances. Return JSON.`;
 
       try {
-        const result = await agent.generate(prompt);
+        // Check budget before making LLM call
+        const inputTokens = estimateTokens(prompt);
+        const estimatedOutputTokens = 800; // Claims extraction tends to be longer
+        const budgetCheck = checkBudget(inputTokens, estimatedOutputTokens, config.llm.daily_budget_usd);
+
+        if (!budgetCheck.allowed) {
+          throw new BudgetExceededError(budgetCheck.remainingBudget, budgetCheck.estimatedCost);
+        }
+
+        // Use retry wrapper for transient failures
+        const result = await withRetry(
+          () => agent.generate(prompt),
+          {
+            maxAttempts: 3,
+            onRetry: (err, attempt, delay) => {
+              console.warn(`Retry ${attempt} for claims from ${post.id} after ${delay}ms: ${err.message}`);
+            },
+          }
+        );
+
         const text = typeof result === "string" ? result : result.text;
+
+        // Record actual usage
+        recordUsage(inputTokens, estimateTokens(text));
 
         // Parse and validate JSON using robust parser
         const fallback: ExtractedClaims = {
@@ -216,6 +277,16 @@ Extract claims as RDF triples and analyze commenter stances. Return JSON.`;
 
         allClaims.push(...extracted.claims);
       } catch (error) {
+        if (error instanceof BudgetExceededError) {
+          console.error(`Budget exceeded, skipping remaining claims extraction. ${error.message}`);
+          // Add remaining items without claims
+          summariesWithClaims.push({
+            ...item,
+            claims: [],
+            commenter_stances: {},
+          });
+          break;
+        }
         console.error(`Error extracting claims from ${post.id}:`, error);
         summariesWithClaims.push({
           ...item,
@@ -225,7 +296,10 @@ Extract claims as RDF triples and analyze commenter stances. Return JSON.`;
       }
     }
 
+    const stats = getUsageStats();
     console.log(`Extracted ${allClaims.length} claims total`);
+    console.log(`Usage: ${stats.requestCount} requests, $${stats.totalCost.toFixed(4)} spent today`);
+
     return { summaries_with_claims: summariesWithClaims, all_claims: allClaims, date };
   },
 });
