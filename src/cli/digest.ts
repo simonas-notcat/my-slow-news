@@ -59,9 +59,9 @@ program
 
         console.log("\n================================");
         console.log("Digest generation complete!");
-        console.log(`  Posts processed: ${result.output?.posts_processed || 0}`);
-        console.log(`  Claims extracted: ${result.output?.claims_extracted || 0}`);
-        console.log(`  File: ${result.output?.digest_path || "unknown"}`);
+        console.log(`  Posts processed: ${(result as any)?.posts_processed || 0}`);
+        console.log(`  Claims extracted: ${(result as any)?.claims_extracted || 0}`);
+        console.log(`  File: ${(result as any)?.digest_path || "unknown"}`);
       }
     } catch (error) {
       console.error("Error generating digest:", error);

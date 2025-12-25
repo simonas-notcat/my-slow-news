@@ -170,8 +170,8 @@ describe("ExtractedClaimsSchema", () => {
 
     expect(result.success).toBe(true);
     expect(result.data.claims).toHaveLength(1);
-    expect(result.data.claims[0].subject).toBe("Rust");
-    expect(result.data.claims[0].confidence).toBe(0.9);
+    expect(result.data.claims![0].subject).toBe("Rust");
+    expect(result.data.claims![0].confidence).toBe(0.9);
   });
 
   test("applies defaults for missing fields", () => {
@@ -183,7 +183,7 @@ describe("ExtractedClaimsSchema", () => {
     });
 
     expect(result.success).toBe(true);
-    expect(result.data.claims[0].confidence).toBe(0.5);
-    expect(result.data.claims[0].source_stance).toBe("neutral");
+    expect(result.data.claims![0].confidence).toBe(0.5);
+    expect(result.data.claims![0].source_stance).toBe("neutral");
   });
 });
