@@ -1,14 +1,19 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 
-// Schema for extracted claims
+// Strict ClaimSchema for tool validation - all fields required.
+// Note: parse-llm-json.ts has a lenient version with optional defaults for LLM parsing.
+// These are intentionally separate: strict for validated inputs, lenient for LLM outputs.
 export const ClaimSchema = z.object({
-  subject: z.string().describe("The entity making or receiving the claim"),
-  predicate: z.string().describe("The relationship or action"),
-  object: z.string().describe("The target of the claim"),
-  confidence: z.number().min(0).max(1).describe("Confidence score 0-1"),
-  source_stance: z.enum(["agrees", "disagrees", "neutral", "uncertain"]).describe("Author's stance"),
+  subject: z.string(),
+  predicate: z.string(),
+  object: z.string(),
+  confidence: z.number().min(0).max(1),
+  source_stance: z.enum(["agrees", "disagrees", "neutral", "uncertain"]),
 });
+
+// Type alias for consistency with the base schema
+export type Claim = z.infer<typeof ClaimSchema>;
 
 export const extractClaimsTool = createTool({
   id: "format-claims",

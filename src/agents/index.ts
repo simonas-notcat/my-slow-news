@@ -1,6 +1,4 @@
 import { Agent } from "@mastra/core/agent";
-import { saveDigestTool } from "./tools/summarize";
-import { extractClaimsTool } from "./tools/extract-claims";
 
 // Default model - used when config is not available
 const DEFAULT_MODEL = "anthropic/claude-sonnet-4-20250514";
@@ -80,33 +78,29 @@ Output format: Return your response as JSON with this structure:
 }`;
 
 /**
- * Creates a summarizer agent with the specified model
+ * Creates a summarizer agent with the specified model.
+ * Note: The saveDigestTool was removed as the workflow handles file saving directly.
  */
 export function createSummarizerAgent(model?: string): Agent {
   return new Agent({
     name: "summarizer",
     instructions: SUMMARIZER_INSTRUCTIONS,
     model: (model || DEFAULT_MODEL) as any,
-    tools: { saveDigestTool },
   });
 }
 
 /**
- * Creates an extractor agent with the specified model
+ * Creates an extractor agent with the specified model.
+ * Note: The extractClaimsTool was removed as claim validation is done in the workflow.
  */
 export function createExtractorAgent(model?: string): Agent {
   return new Agent({
     name: "extractor",
     instructions: EXTRACTOR_INSTRUCTIONS,
     model: (model || DEFAULT_MODEL) as any,
-    tools: { extractClaimsTool },
   });
 }
 
 // Default agent instances for backward compatibility
 export const summarizerAgent = createSummarizerAgent();
 export const extractorAgent = createExtractorAgent();
-
-// Re-export tools
-export { saveDigestTool } from "./tools/summarize";
-export { extractClaimsTool } from "./tools/extract-claims";
