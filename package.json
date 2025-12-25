@@ -9,7 +9,10 @@
     "query": "bun run src/cli/query.ts",
     "predicates": "bun run src/cli/predicates.ts",
     "db:init": "bun run src/db/init.ts",
-    "dev": "bun run --watch src/index.ts"
+    "dev": "bun run --watch src/index.ts",
+    "test": "bun test",
+    "test:ci": "bun test --ci",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@mastra/core": "^0.10.0",
