@@ -215,13 +215,75 @@ docker-compose up cron -d
 
 The cron service runs `bun run digest` daily at 07:00.
 
-## Testing Workflow
+## Testing
 
-Currently no tests are configured. When adding tests:
-- Use Bun's built-in test runner
-- Mock Reddit API responses
-- Mock Anthropic API for agent tests
-- Test database operations against a test namespace
+Tests use Bun's built-in test runner. Run with `bun test` or `bun run test:ci` for CI mode.
+
+### Test File Locations
+- Tests are co-located with source files using `.test.ts` suffix
+- Example: `src/utils/retry.ts` → `src/utils/retry.test.ts`
+
+### Writing Tests for Bun
+
+**DO NOT use Node.js-specific APIs** - Bun's module system differs from Node.js:
+
+```typescript
+// ❌ WRONG - Node.js APIs don't work in Bun
+delete require.cache[require.resolve("./module")];
+const mod = await import("./module");
+
+// ✅ CORRECT - Use direct imports
+import { myFunction } from "./module";
+```
+
+### Mocking Fetch
+
+Mock `global.fetch` for HTTP tests:
+
+```typescript
+import { describe, test, mock, beforeEach, afterEach } from "bun:test";
+
+const originalFetch = global.fetch;
+
+describe("my tests", () => {
+  let mockFetch: ReturnType<typeof mock>;
+
+  beforeEach(() => {
+    mockFetch = mock(() => Promise.resolve(new Response("{}")));
+    global.fetch = mockFetch as typeof fetch;
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  test("fetches data", async () => {
+    mockFetch.mockImplementation(() =>
+      Promise.resolve(new Response(JSON.stringify({ data: "test" })))
+    );
+    // ... test code
+  });
+});
+```
+
+### Test Patterns
+
+- **Reset state between tests**: Use `beforeEach` to reset module state (e.g., `resetUsageTracker()`)
+- **Mock external dependencies**: Never make real API calls in tests
+- **Type assertions for mock calls**: Use `as [string, RequestInit]` for mock call arguments
+- **Test error cases**: Always test error handling paths
+
+### Existing Test Coverage
+
+| Module | Test File |
+|--------|-----------|
+| `src/utils/retry.ts` | `src/utils/retry.test.ts` |
+| `src/utils/budget-tracker.ts` | `src/utils/budget-tracker.test.ts` |
+| `src/utils/parse-llm-json.ts` | `src/utils/parse-llm-json.test.ts` |
+| `src/reddit/client.ts` | `src/reddit/client.test.ts` |
+| `src/agents/tools/extract-claims.ts` | `src/agents/tools/extract-claims.test.ts` |
+| `src/config/index.ts` | `src/config/config.test.ts` |
+| `src/types/index.ts` | `src/types/types.test.ts` |
 
 ## Common Tasks
 
