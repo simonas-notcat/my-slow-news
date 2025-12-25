@@ -228,10 +228,18 @@ Provide a JSON response with summary, notable_comments, sentiment, and key_topic
           console.warn(`JSON parse warning for post ${post.id}: ${error}`);
         }
 
+        // Normalize summary to ensure all fields have values (Zod defaults are applied during parsing)
+        const normalizedSummary = {
+          summary: summary.summary,
+          notable_comments: summary.notable_comments ?? [],
+          sentiment: summary.sentiment ?? "neutral" as const,
+          key_topics: summary.key_topics ?? [],
+        };
+
         summaries.push({
           subreddit,
           post,
-          summary,
+          summary: normalizedSummary,
         });
       } catch (error) {
         if (error instanceof BudgetExceededError) {
