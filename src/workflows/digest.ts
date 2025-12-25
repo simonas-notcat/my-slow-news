@@ -647,7 +647,7 @@ export async function runDigestWorkflow(date?: string) {
   try {
     // New Mastra API: create run and start
     const run = await digestWorkflow.createRunAsync();
-    const result = await run.start({ date });
+    const result = await run.start({ inputData: { date } });
     return result;
   } catch (error: any) {
     // If the error is workflow-related, try extracting the actual result
