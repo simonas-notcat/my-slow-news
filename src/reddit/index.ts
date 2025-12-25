@@ -5,6 +5,7 @@ import {
 } from "./client";
 import type { RedditPost, RedditComment, Config } from "../types";
 import { getRedditCredentials } from "../config";
+import { sleep } from "../utils/retry";
 
 export interface PostWithComments {
   post: RedditPost;
@@ -79,10 +80,6 @@ export async function fetchTopPostsWithComments(
   }
 
   return results;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export { getAccessToken, fetchSubredditPosts, fetchPostComments } from "./client";
