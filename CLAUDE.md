@@ -250,7 +250,7 @@ describe("my tests", () => {
 
   beforeEach(() => {
     mockFetch = mock(() => Promise.resolve(new Response("{}")));
-    globalThis.fetch = mockFetch as typeof fetch;
+    globalThis.fetch = mockFetch as unknown as typeof fetch;
   });
 
   afterEach(() => {
@@ -271,6 +271,7 @@ describe("my tests", () => {
 - **Reset state between tests**: Use `beforeEach` to reset module state (e.g., `resetUsageTracker()`, `clearCachedToken()`)
 - **Mock external dependencies**: Never make real API calls in tests
 - **Type assertions for mock calls**: Use `as [string, RequestInit]` for mock call arguments
+- **Mock fetch type assertion**: Use `as unknown as typeof fetch` (Bun's fetch has extra properties like `preconnect`)
 - **Test error cases**: Always test error handling paths
 - **Avoid Jest-specific APIs**: Don't use `expect.unreachable()` - use standard `throw new Error()` instead
 - **Clear cached state**: Modules with global state (like token caching) need reset functions for testing
