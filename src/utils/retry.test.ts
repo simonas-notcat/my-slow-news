@@ -205,10 +205,14 @@ describe("withRetry", () => {
 
       try {
         await withRetry(fn, { initialDelayMs: 10 });
-        expect.unreachable("Should have thrown");
+        throw new Error("Should have thrown");
       } catch (error) {
-        expect(error).toBeInstanceOf(CustomError);
-        expect((error as CustomError).code).toBe(500);
+        if (error instanceof CustomError) {
+          expect(error).toBeInstanceOf(CustomError);
+          expect(error.code).toBe(500);
+        } else {
+          throw error; // Re-throw if it's our "Should have thrown" error
+        }
       }
     });
   });
