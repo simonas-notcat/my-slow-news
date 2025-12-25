@@ -1,6 +1,5 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
-import type { ClaimRecord } from "../../types";
 
 // Schema for extracted claims
 export const ClaimSchema = z.object({
