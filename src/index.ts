@@ -18,7 +18,7 @@ console.log(`  LLM Model: ${config.llm.model}`);
 console.log(`  Daily budget: $${config.llm.daily_budget_usd}`);
 console.log();
 
-console.log("Available agents:", Object.keys(mastra.agents || {}));
+console.log("Available agents: summarizer, extractor");
 console.log();
 
 console.log("CLI Commands:");

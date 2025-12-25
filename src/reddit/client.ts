@@ -41,7 +41,7 @@ export async function getAccessToken(
     expires_at: Date.now() + data.expires_in * 1000,
   };
 
-  return cachedToken.access_token;
+  return cachedToken!.access_token;
 }
 
 export async function fetchSubredditPosts(

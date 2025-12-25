@@ -14,13 +14,13 @@ describe("ConfigSchema", () => {
         },
       },
       llm: {
-        provider: "anthropic",
+        provider: "anthropic" as const,
         model: "claude-sonnet-4-20250514",
         daily_budget_usd: 5.0,
       },
       output: {
         digest_dir: "./digests",
-        format: "markdown",
+        format: "markdown" as const,
       },
       database: {
         url: "ws://localhost:8000/rpc",

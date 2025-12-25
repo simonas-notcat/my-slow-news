@@ -275,7 +275,9 @@ Extract claims as RDF triples and analyze commenter stances. Return JSON.`;
           commenter_stances: extracted.commenter_stances,
         });
 
-        allClaims.push(...extracted.claims);
+        if (extracted.claims) {
+          allClaims.push(...extracted.claims);
+        }
       } catch (error) {
         if (error instanceof BudgetExceededError) {
           console.error(`Budget exceeded, skipping remaining claims extraction. ${error.message}`);
@@ -535,7 +537,7 @@ export const digestWorkflow = createWorkflow({
 
 // Helper function to run the workflow
 export async function runDigestWorkflow(date?: string) {
-  const result = await digestWorkflow.start({
+  const result = await (digestWorkflow as any).execute({
     inputData: { date },
   });
 

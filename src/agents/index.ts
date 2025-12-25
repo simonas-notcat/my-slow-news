@@ -86,7 +86,7 @@ export function createSummarizerAgent(model?: string): Agent {
   return new Agent({
     name: "summarizer",
     instructions: SUMMARIZER_INSTRUCTIONS,
-    model: model || DEFAULT_MODEL,
+    model: (model || DEFAULT_MODEL) as any,
     tools: { saveDigestTool },
   });
 }
@@ -98,7 +98,7 @@ export function createExtractorAgent(model?: string): Agent {
   return new Agent({
     name: "extractor",
     instructions: EXTRACTOR_INSTRUCTIONS,
-    model: model || DEFAULT_MODEL,
+    model: (model || DEFAULT_MODEL) as any,
     tools: { extractClaimsTool },
   });
 }
