@@ -37,13 +37,15 @@ export class RateLimiter {
       );
     }
 
+    // Set lastRequestTime immediately to prevent race conditions
+    // Multiple concurrent calls will now properly space themselves out
+    this.lastRequestTime = now;
+
     // If not enough time has passed, wait
     const remainingDelay = delay - timeSinceLastRequest;
     if (remainingDelay > 0) {
       await new Promise(resolve => setTimeout(resolve, remainingDelay));
     }
-
-    this.lastRequestTime = Date.now();
   }
 
   /**

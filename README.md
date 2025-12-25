@@ -12,6 +12,23 @@ Instead of consuming news in real-time, My Slow News creates thoughtful daily su
 - **Knowledge Graph**: Build a personal knowledge base stored in SurrealDB
 - **No Authentication**: Uses RSS feeds and web scraping - no Reddit API credentials needed
 
+## ⚠️ Legal Disclaimer
+
+**This project uses web scraping to fetch Reddit content.** Please be aware:
+
+- Web scraping may be subject to [Reddit's Terms of Service](https://www.redditinc.com/policies/user-agreement) and [API Terms](https://www.reddit.com/wiki/api-terms)
+- Reddit's terms generally require using the official API for automated access
+- Excessive scraping may result in IP bans or other restrictions
+- This tool is intended for personal, educational use only
+- Users are responsible for ensuring their usage complies with applicable terms of service and laws
+- The project maintainers assume no liability for how this tool is used
+
+**Recommendations:**
+- Use reasonable rate limits (configured by default)
+- Monitor for changes in Reddit's HTML structure that may break scraping
+- Consider using the official Reddit API for production or commercial use
+- Be respectful of Reddit's infrastructure and community guidelines
+
 ## Tech Stack
 
 - **Runtime**: Bun

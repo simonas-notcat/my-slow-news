@@ -91,17 +91,3 @@ export async function fetchPostComments(
   }
 }
 
-/**
- * Fetch subreddit info (not needed for current implementation, kept for compatibility)
- * @deprecated This function is no longer used with scraping approach
- */
-export async function fetchSubredditInfo(
-  subreddit: string
-): Promise<{ subscribers: number; active_users: number; avg_score: number }> {
-  console.warn("fetchSubredditInfo is deprecated with scraping approach");
-  return {
-    subscribers: 0,
-    active_users: 0,
-    avg_score: 100,
-  };
-}
