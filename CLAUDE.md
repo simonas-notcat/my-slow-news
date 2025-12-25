@@ -238,23 +238,23 @@ import { myFunction } from "./module";
 
 ### Mocking Fetch
 
-Mock `global.fetch` for HTTP tests:
+Mock `globalThis.fetch` for HTTP tests (use `globalThis`, not `global`):
 
 ```typescript
 import { describe, test, mock, beforeEach, afterEach } from "bun:test";
 
-const originalFetch = global.fetch;
+const originalFetch = globalThis.fetch;
 
 describe("my tests", () => {
   let mockFetch: ReturnType<typeof mock>;
 
   beforeEach(() => {
     mockFetch = mock(() => Promise.resolve(new Response("{}")));
-    global.fetch = mockFetch as typeof fetch;
+    globalThis.fetch = mockFetch as typeof fetch;
   });
 
   afterEach(() => {
-    global.fetch = originalFetch;
+    globalThis.fetch = originalFetch;
   });
 
   test("fetches data", async () => {

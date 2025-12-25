@@ -8,19 +8,19 @@ import {
 } from "./client";
 
 // Store original fetch
-const originalFetch = global.fetch;
+const originalFetch = globalThis.fetch;
 
 describe("reddit/client", () => {
   let mockFetch: ReturnType<typeof mock>;
 
   beforeEach(() => {
     mockFetch = mock(() => Promise.resolve(new Response("{}")));
-    global.fetch = mockFetch as typeof fetch;
+    globalThis.fetch = mockFetch as typeof fetch;
     clearCachedToken(); // Reset token cache between tests
   });
 
   afterEach(() => {
-    global.fetch = originalFetch;
+    globalThis.fetch = originalFetch;
   });
 
   describe("fetchSubredditPosts", () => {
