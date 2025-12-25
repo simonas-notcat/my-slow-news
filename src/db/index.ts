@@ -2,7 +2,6 @@ import Surreal from "surrealdb";
 import type { Config } from "../types";
 
 let db: Surreal | null = null;
-let lastConfig: Config | null = null;
 
 /**
  * Check if the database connection is healthy
@@ -83,7 +82,6 @@ export async function getDb(config: Config): Promise<Surreal> {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       db = await createConnection(config);
-      lastConfig = config;
       return db;
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
@@ -106,7 +104,6 @@ export async function closeDb(): Promise<void> {
   if (db) {
     await db.close();
     db = null;
-    lastConfig = null;
   }
 }
 
