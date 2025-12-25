@@ -45,9 +45,12 @@ src/
 │   ├── index.ts       # SurrealDB connection
 │   ├── schema.ts      # Table definitions
 │   └── init.ts        # Schema initialization
-├── reddit/            # Reddit API client
-│   ├── index.ts       # High-level fetch functions
-│   └── client.ts      # OAuth and API calls
+├── sources/
+│   └── reddit/        # Reddit scraper (RSS + web scraping)
+│       ├── index.ts       # High-level fetch functions
+│       ├── client.ts      # Main Reddit client
+│       ├── rss-fetcher.ts # RSS feed parser
+│       └── scraper.ts     # Web scraping logic
 ├── types/             # TypeScript type definitions
 │   └── index.ts       # All types and Zod schemas
 └── workflows/         # Mastra workflows
@@ -96,11 +99,9 @@ bun run dev
 Required in `.env`:
 ```
 ANTHROPIC_API_KEY=sk-ant-...
-REDDIT_CLIENT_ID=your_client_id
-REDDIT_CLIENT_SECRET=your_client_secret
 ```
 
-Get Reddit credentials at: https://www.reddit.com/prefs/apps
+No Reddit API credentials needed - the app uses RSS feeds and web scraping.
 
 ## Configuration (config.yaml)
 
@@ -283,7 +284,6 @@ describe("my tests", () => {
 | `src/utils/retry.ts` | `src/utils/retry.test.ts` |
 | `src/utils/budget-tracker.ts` | `src/utils/budget-tracker.test.ts` |
 | `src/utils/parse-llm-json.ts` | `src/utils/parse-llm-json.test.ts` |
-| `src/reddit/client.ts` | `src/reddit/client.test.ts` |
 | `src/agents/tools/extract-claims.ts` | `src/agents/tools/extract-claims.test.ts` |
 | `src/config/index.ts` | `src/config/config.test.ts` |
 | `src/types/index.ts` | `src/types/types.test.ts` |

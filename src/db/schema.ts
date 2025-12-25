@@ -20,7 +20,8 @@ DEFINE FIELD post ON comment TYPE record<post>;
 DEFINE FIELD author ON comment TYPE string;
 DEFINE FIELD content ON comment TYPE string;
 DEFINE FIELD score ON comment TYPE int;
-DEFINE FIELD parent ON comment TYPE option<record<comment>>;
+DEFINE FIELD parent_id ON comment TYPE string;
+DEFINE FIELD created_at ON comment TYPE datetime;
 DEFINE INDEX idx_comment_reddit_id ON comment FIELDS reddit_id UNIQUE;
 DEFINE INDEX idx_comment_post ON comment FIELDS post;
 

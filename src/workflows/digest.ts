@@ -499,9 +499,6 @@ const saveToDatabaseStep = createStep({
     }
 
     try {
-      // Use a transaction for atomicity
-      await db.query("BEGIN TRANSACTION");
-
       const savedPostIds: string[] = [];
       const savedClaimIds: string[] = [];
       let savedCommentCount = 0;
@@ -523,7 +520,7 @@ const saveToDatabaseStep = createStep({
             author: post.author,
             url: post.permalink,
             score: post.score,
-            created_at: new Date(post.created_utc * 1000).toISOString(),
+            created_at: new Date(post.created_utc * 1000),
           }
         );
 
@@ -545,7 +542,7 @@ const saveToDatabaseStep = createStep({
                   content: comment.body,
                   score: comment.score,
                   parent_id: comment.parent_id,
-                  created_at: new Date(comment.created_utc * 1000).toISOString(),
+                  created_at: new Date(comment.created_utc * 1000),
                 }
               );
               savedCommentCount++;
@@ -570,7 +567,7 @@ const saveToDatabaseStep = createStep({
         const claimResult = await db.query<any[][]>(
           `INSERT INTO claim (subject, predicate, object, confidence, extracted_at)
            VALUES ($subject, $predicate, $object, $confidence, time::now())
-           ON DUPLICATE KEY UPDATE confidence = math::max(confidence, $confidence)`,
+           ON DUPLICATE KEY UPDATE confidence = math::max([confidence, $confidence])`,
           {
             subject: claim.subject,
             predicate: claim.predicate,
@@ -610,20 +607,16 @@ const saveToDatabaseStep = createStep({
          VALUES ($date, $file_path, $posts, $claims)
          ON DUPLICATE KEY UPDATE file_path = $file_path, posts_included = $posts, claims_extracted = $claims`,
         {
-          date: new Date(date).toISOString(),
+          date: new Date(date),
           file_path: digest_path,
           posts: savedPostIds,
           claims: savedClaimIds,
         }
       );
 
-      await db.query("COMMIT TRANSACTION");
-
       console.log(`Saved ${savedPostIds.length} posts, ${savedCommentCount} comments, and ${savedClaimIds.length} claims to database`);
     } catch (error) {
-      // Rollback on error
-      await db.query("CANCEL TRANSACTION").catch(() => {});
-      console.error("Database save failed, transaction rolled back:", error);
+      console.error("Database save failed:", error);
     } finally {
       await closeDb();
     }
