@@ -19,16 +19,16 @@ program
   .option("-d, --days <days>", "Number of days to analyze", "30")
   .action(async (subreddit, options) => {
     const days = parseInt(options.days, 10);
-    if (isNaN(days) || days < 0) {
+    if (isNaN(days) || days <= 0) {
       console.error("Error: --days must be a positive number");
       process.exit(1);
     }
     console.log(`Finding themes in r/${subreddit} (last ${days} days)\n`);
 
-    try {
-      const config = loadConfig();
-      const db = await getDb(config);
+    const config = loadConfig();
+    const db = await getDb(config);
 
+    try {
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - days);
 
@@ -63,11 +63,11 @@ program
       for (const s of subjects || []) {
         console.log(`  ${s.subject}: ${s.count} claims`);
       }
-
-      await closeDb();
     } catch (error) {
       console.error("Error querying themes:", error);
       process.exit(1);
+    } finally {
+      await closeDb();
     }
   });
 
@@ -80,16 +80,16 @@ program
   .option("-d, --days <days>", "Number of days to search", "7")
   .action(async (options) => {
     const days = parseInt(options.days, 10);
-    if (isNaN(days) || days < 0) {
+    if (isNaN(days) || days <= 0) {
       console.error("Error: --days must be a positive number");
       process.exit(1);
     }
     console.log("Searching claims...\n");
 
-    try {
-      const config = loadConfig();
-      const db = await getDb(config);
+    const config = loadConfig();
+    const db = await getDb(config);
 
+    try {
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - days);
 
@@ -129,11 +129,11 @@ program
       if (!claims?.length) {
         console.log("  No claims found matching criteria.");
       }
-
-      await closeDb();
     } catch (error) {
       console.error("Error searching claims:", error);
       process.exit(1);
+    } finally {
+      await closeDb();
     }
   });
 
@@ -143,10 +143,10 @@ program
   .action(async () => {
     console.log("Your Stances:\n");
 
-    try {
-      const config = loadConfig();
-      const db = await getDb(config);
+    const config = loadConfig();
+    const db = await getDb(config);
 
+    try {
       const [stances] = await db.query<[ClaimWithStance[]]>(`
         SELECT claim.subject, claim.predicate, claim.object, user_stance, user_note
         FROM claim_stances
@@ -170,11 +170,11 @@ program
         console.log("You haven't recorded any stances yet.");
         console.log('Use: bun run stance "Subject predicate Object" agree|disagree');
       }
-
-      await closeDb();
     } catch (error) {
       console.error("Error fetching stances:", error);
       process.exit(1);
+    } finally {
+      await closeDb();
     }
   });
 

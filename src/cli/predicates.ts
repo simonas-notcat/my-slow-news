@@ -11,10 +11,10 @@ program
   .action(async (options) => {
     console.log("My Slow News - Predicate Registry\n");
 
-    try {
-      const config = loadConfig();
-      const db = await getDb(config);
+    const config = loadConfig();
+    const db = await getDb(config);
 
+    try {
       if (options.new) {
         // Show only new predicates
         const predicates = await db.query<any[][]>(`
@@ -66,11 +66,11 @@ program
           }
         }
       }
-
-      await closeDb();
     } catch (error) {
       console.error("Error fetching predicates:", error);
       process.exit(1);
+    } finally {
+      await closeDb();
     }
   });
 
