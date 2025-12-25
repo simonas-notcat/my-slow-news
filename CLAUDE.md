@@ -1,0 +1,263 @@
+# CLAUDE.md - My Slow News
+
+This file provides guidance for AI assistants working with this codebase.
+
+## Project Overview
+
+**My Slow News** is a deliberate news consumption tool that generates daily digests from Reddit with AI-powered knowledge extraction. Instead of real-time news feeds, it provides thoughtful daily summaries with extracted claims stored as a knowledge graph.
+
+### Core Concept
+- Fetch top posts from configured subreddits
+- Summarize content using Claude AI
+- Extract factual claims as RDF-style triples (subject, predicate, object)
+- Track user stances on claims over time
+- Build a personal knowledge base
+
+## Tech Stack
+
+- **Runtime**: Bun (TypeScript)
+- **AI Framework**: Mastra (`@mastra/core`)
+- **LLM**: Anthropic Claude (claude-sonnet-4-20250514)
+- **Database**: SurrealDB (graph database)
+- **CLI**: Commander.js
+- **Validation**: Zod
+- **Config**: YAML
+
+## Project Structure
+
+```
+src/
+├── index.ts           # Development entry point
+├── mastra.ts          # Mastra AI framework setup
+├── agents/            # AI agent definitions
+│   ├── index.ts       # Agent exports (summarizer, extractor)
+│   └── tools/         # Agent tools
+│       ├── extract-claims.ts   # Claim extraction tool
+│       └── summarize.ts        # Digest save tool
+├── cli/               # CLI commands
+│   ├── digest.ts      # Generate daily digest
+│   ├── query.ts       # Query knowledge base
+│   ├── stance.ts      # Record user stances
+│   └── predicates.ts  # View predicate ontology
+├── config/            # Configuration loading
+│   └── index.ts       # YAML config parser
+├── db/                # Database layer
+│   ├── index.ts       # SurrealDB connection
+│   ├── schema.ts      # Table definitions
+│   └── init.ts        # Schema initialization
+├── reddit/            # Reddit API client
+│   ├── index.ts       # High-level fetch functions
+│   └── client.ts      # OAuth and API calls
+├── types/             # TypeScript type definitions
+│   └── index.ts       # All types and Zod schemas
+└── workflows/         # Mastra workflows
+    └── digest.ts      # Multi-step digest generation
+```
+
+## Development Commands
+
+```bash
+# Install dependencies
+bun install
+
+# Initialize database schema
+bun run db:init
+
+# Generate today's digest
+bun run digest
+
+# Generate digest for specific date
+bun run digest -d 2025-01-15
+
+# Generate digest for date range
+bun run digest --from 2025-01-01 --to 2025-01-07
+
+# Record your stance on a claim
+bun run stance "Rust is-safer-than C++" agree -n "Memory safety by default"
+
+# Query claims in knowledge base
+bun run query claims -s "Rust" -d 30
+
+# Find recurring themes
+bun run query themes programming -d 30
+
+# View your recorded stances
+bun run query my-stances
+
+# View predicate ontology
+bun run predicates --all
+
+# Development mode with watch
+bun run dev
+```
+
+## Environment Variables
+
+Required in `.env`:
+```
+ANTHROPIC_API_KEY=sk-ant-...
+REDDIT_CLIENT_ID=your_client_id
+REDDIT_CLIENT_SECRET=your_client_secret
+```
+
+Get Reddit credentials at: https://www.reddit.com/prefs/apps
+
+## Configuration (config.yaml)
+
+```yaml
+sources:
+  reddit:
+    subreddits: [programming, rust, typescript]
+    posts_per_subreddit: 5
+    lookback_hours: 24
+    min_relative_score: 1.0  # Filter by average score multiplier
+    max_comments_per_post: 50
+
+llm:
+  provider: anthropic
+  model: claude-sonnet-4-20250514
+  daily_budget_usd: 5.0
+
+output:
+  digest_dir: ./digests
+  format: markdown
+
+database:
+  url: ws://localhost:8000/rpc
+  namespace: myslownews
+  database: main
+```
+
+## Database Schema
+
+SurrealDB tables:
+
+| Table | Purpose |
+|-------|---------|
+| `post` | Raw Reddit posts |
+| `comment` | Reddit comments linked to posts |
+| `claim` | Extracted RDF triples (subject, predicate, object) |
+| `claim_stances` | User stances and community sentiment on claims |
+| `digest` | Generated digest metadata |
+| `predicate` | Predicate registry (built-in + LLM-generated) |
+| `makes_claim` | Graph edge: content → claim relation |
+
+### Built-in Predicates
+- `announced`, `released`, `deprecated`
+- `is-better-than`, `is-faster-than`, `is-safer-than`
+- `acquired`, `supports`, `opposes`
+- `uses`, `migrated-to`, `has`, `lacks`, `claims`
+
+## AI Agents
+
+### Summarizer Agent (`src/agents/index.ts:5-31`)
+- Summarizes Reddit posts and comments
+- Identifies notable comments and key topics
+- Returns structured JSON with summary, sentiment, topics
+
+### Extractor Agent (`src/agents/index.ts:33-87`)
+- Extracts factual claims as RDF triples
+- Determines source author stance (agrees/disagrees/neutral/uncertain)
+- Analyzes community opinion from comments
+- Uses kebab-case predicates (e.g., `is-better-than`)
+
+## Workflow Pipeline (`src/workflows/digest.ts`)
+
+The digest workflow has 5 sequential steps:
+
+1. **fetch-content**: Fetch Reddit posts and comments via OAuth
+2. **summarize-posts**: Run summarizer agent on each post
+3. **extract-claims**: Run extractor agent to build triples
+4. **generate-digest**: Create markdown file from summaries
+5. **save-to-database**: Persist to SurrealDB (placeholder)
+
+## Code Conventions
+
+### TypeScript
+- Strict mode enabled
+- ES2022 target with ESNext modules
+- Use Zod for runtime validation
+- Export types from `src/types/index.ts`
+
+### Imports
+- Use relative imports within `src/`
+- Always import types with `type` keyword when possible
+
+### Error Handling
+- CLI commands catch errors and call `process.exit(1)`
+- Workflows log errors but continue processing other items
+- Database operations use try/catch with specific error messages
+
+### Naming
+- Files: kebab-case (`extract-claims.ts`)
+- Functions: camelCase (`fetchTopPostsWithComments`)
+- Types/Interfaces: PascalCase (`PostRecord`)
+- Predicates: kebab-case (`is-faster-than`)
+- Database tables: lowercase (`claim_stances`)
+
+### Agent Responses
+- Agents return JSON embedded in text
+- Parse with regex: `text.match(/\{[\s\S]*\}/)`
+- Always provide fallback for parsing failures
+
+## Docker Setup
+
+```bash
+# Start SurrealDB and app
+docker-compose up -d
+
+# Just the database
+docker-compose up surrealdb -d
+
+# Scheduled daily digest (runs at 7 AM)
+docker-compose up cron -d
+```
+
+The cron service runs `bun run digest` daily at 07:00.
+
+## Testing Workflow
+
+Currently no tests are configured. When adding tests:
+- Use Bun's built-in test runner
+- Mock Reddit API responses
+- Mock Anthropic API for agent tests
+- Test database operations against a test namespace
+
+## Common Tasks
+
+### Adding a New Subreddit
+Edit `config.yaml` and add to `sources.reddit.subreddits` array.
+
+### Adding a New Predicate
+Built-in predicates are in `src/db/schema.ts` (SEED_PREDICATES). The extractor agent can generate new predicates dynamically, which are stored with `is_builtin: false`.
+
+### Extending the Workflow
+Add new steps in `src/workflows/digest.ts` using `createStep()`. Chain with `.then()` before `.commit()`.
+
+### Adding a New CLI Command
+1. Create file in `src/cli/`
+2. Use Commander.js pattern from existing commands
+3. Add script to `package.json`
+
+## Database Connection
+
+```typescript
+import { loadConfig } from "./config";
+import { getDb, closeDb } from "./db";
+
+const config = loadConfig();
+const db = await getDb(config);
+
+// Use db.query() for SurrealQL queries
+const results = await db.query<any[][]>(`SELECT * FROM claim LIMIT 10`);
+
+await closeDb();
+```
+
+## Important Notes
+
+- Reddit API rate limits: Small delays (100ms) between requests
+- Token caching: Reddit OAuth tokens cached with expiration tracking
+- Database singleton: `getDb()` returns cached connection
+- Digests saved to `./digests/{YYYY-MM-DD}.md`
+- Claims require ≥0.5 confidence to be stored
