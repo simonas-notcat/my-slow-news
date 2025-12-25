@@ -4,6 +4,7 @@ import {
   fetchSubredditPosts,
   fetchPostComments,
   fetchSubredditInfo,
+  clearCachedToken,
 } from "./client";
 
 // Store original fetch
@@ -15,6 +16,7 @@ describe("reddit/client", () => {
   beforeEach(() => {
     mockFetch = mock(() => Promise.resolve(new Response("{}")));
     global.fetch = mockFetch as typeof fetch;
+    clearCachedToken(); // Reset token cache between tests
   });
 
   afterEach(() => {

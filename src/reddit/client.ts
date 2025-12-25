@@ -9,6 +9,13 @@ interface RedditAuthToken {
 
 let cachedToken: RedditAuthToken | null = null;
 
+/**
+ * Clears the cached token (for testing)
+ */
+export function clearCachedToken(): void {
+  cachedToken = null;
+}
+
 export async function getAccessToken(
   clientId: string,
   clientSecret: string
