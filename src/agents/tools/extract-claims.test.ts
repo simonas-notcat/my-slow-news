@@ -73,6 +73,12 @@ describe("ClaimSchema", () => {
 });
 
 describe("extractClaimsTool", () => {
+  // Helper to create execution context for testing
+  const createTestContext = (claims: unknown[], post_id: string) => ({
+    context: { claims, post_id },
+    runtimeContext: {},
+  } as any);
+
   test("has correct metadata", () => {
     expect(extractClaimsTool.id).toBe("format-claims");
     expect(extractClaimsTool.description).toBe(
@@ -105,9 +111,9 @@ describe("extractClaimsTool", () => {
       },
     ];
 
-    const result = await extractClaimsTool.execute({
-      context: { claims, post_id: "test123" },
-    });
+    const result = await extractClaimsTool.execute(
+      createTestContext(claims, "test123")
+    );
 
     expect(result.valid_claims).toHaveLength(2);
     expect(result.invalid_count).toBe(1);
@@ -143,18 +149,18 @@ describe("extractClaimsTool", () => {
       },
     ];
 
-    const result = await extractClaimsTool.execute({
-      context: { claims, post_id: "post456" },
-    });
+    const result = await extractClaimsTool.execute(
+      createTestContext(claims, "post456")
+    );
 
     expect(result.valid_claims).toHaveLength(3);
     expect(result.invalid_count).toBe(0);
   });
 
   test("handles empty claims array", async () => {
-    const result = await extractClaimsTool.execute({
-      context: { claims: [], post_id: "empty" },
-    });
+    const result = await extractClaimsTool.execute(
+      createTestContext([], "empty")
+    );
 
     expect(result.valid_claims).toHaveLength(0);
     expect(result.invalid_count).toBe(0);
@@ -171,9 +177,9 @@ describe("extractClaimsTool", () => {
       },
     ];
 
-    const result = await extractClaimsTool.execute({
-      context: { claims, post_id: "react-post" },
-    });
+    const result = await extractClaimsTool.execute(
+      createTestContext(claims, "react-post")
+    );
 
     expect(result.valid_claims[0]).toEqual(claims[0]);
   });
@@ -203,9 +209,9 @@ describe("extractClaimsTool", () => {
       },
     ];
 
-    const result = await extractClaimsTool.execute({
-      context: { claims, post_id: "low-confidence" },
-    });
+    const result = await extractClaimsTool.execute(
+      createTestContext(claims, "low-confidence")
+    );
 
     expect(result.valid_claims).toHaveLength(0);
     expect(result.invalid_count).toBe(3);
