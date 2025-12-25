@@ -96,7 +96,16 @@ Provide a JSON response with summary, notable_comments, sentiment, and key_topic
 
         // Try to parse JSON from the response
         const jsonMatch = text.match(/\{[\s\S]*\}/);
-        const summary = jsonMatch ? JSON.parse(jsonMatch[0]) : { summary: text };
+        let summary: { summary: string; notable_comments?: string[]; sentiment?: string; key_topics?: string[] };
+        if (jsonMatch) {
+          try {
+            summary = JSON.parse(jsonMatch[0]);
+          } catch {
+            summary = { summary: text };
+          }
+        } else {
+          summary = { summary: text };
+        }
 
         summaries.push({
           subreddit,
@@ -157,9 +166,16 @@ Extract claims as RDF triples and analyze commenter stances. Return JSON.`;
         const text = typeof result === "string" ? result : result.text;
 
         const jsonMatch = text.match(/\{[\s\S]*\}/);
-        const extracted = jsonMatch
-          ? JSON.parse(jsonMatch[0])
-          : { claims: [], commenter_stances: {} };
+        let extracted: { claims?: unknown[]; commenter_stances?: Record<string, unknown> };
+        if (jsonMatch) {
+          try {
+            extracted = JSON.parse(jsonMatch[0]);
+          } catch {
+            extracted = { claims: [], commenter_stances: {} };
+          }
+        } else {
+          extracted = { claims: [], commenter_stances: {} };
+        }
 
         summariesWithClaims.push({
           ...item,

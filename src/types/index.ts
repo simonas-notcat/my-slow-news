@@ -13,7 +13,7 @@ export const ConfigSchema = z.object({
   }),
   llm: z.object({
     provider: z.literal("anthropic"),
-    model: z.string().default("claude-sonnet-4-20250514"),
+    model: z.string().default("anthropic/claude-sonnet-4-20250514"),
     daily_budget_usd: z.number().default(5.0),
   }),
   output: z.object({
@@ -24,8 +24,6 @@ export const ConfigSchema = z.object({
     url: z.string().default("ws://localhost:8000/rpc"),
     namespace: z.string().default("myslownews"),
     database: z.string().default("main"),
-    username: z.string().default("root"),
-    password: z.string().default("root"),
   }),
 });
 

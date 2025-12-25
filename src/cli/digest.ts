@@ -18,7 +18,7 @@ program
         const start = new Date(options.from);
         const end = new Date(options.to);
 
-        for (let d = start; d <= end; d.setDate(d.getDate() + 1)) {
+        for (let d = new Date(start); d <= end; d = new Date(d.getTime() + 86400000)) {
           const dateStr = d.toISOString().split("T")[0];
           console.log(`\n--- Generating digest for ${dateStr} ---\n`);
           await runDigestWorkflow(dateStr);

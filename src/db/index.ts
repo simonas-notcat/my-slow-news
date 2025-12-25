@@ -8,15 +8,32 @@ export async function getDb(config: Config): Promise<Surreal> {
 
   db = new Surreal();
 
-  await db.connect(config.database.url);
-  await db.signin({
-    username: config.database.username,
-    password: config.database.password,
-  });
-  await db.use({
-    namespace: config.database.namespace,
-    database: config.database.database,
-  });
+  try {
+    await db.connect(config.database.url);
+  } catch (error) {
+    db = null;
+    throw new Error(`Failed to connect to database at ${config.database.url}: ${error}`);
+  }
+
+  try {
+    await db.signin({
+      username: process.env.SURREALDB_USERNAME || "root",
+      password: process.env.SURREALDB_PASSWORD || "root",
+    });
+  } catch (error) {
+    db = null;
+    throw new Error(`Failed to sign in to database: ${error}`);
+  }
+
+  try {
+    await db.use({
+      namespace: config.database.namespace,
+      database: config.database.database,
+    });
+  } catch (error) {
+    db = null;
+    throw new Error(`Failed to select database namespace: ${error}`);
+  }
 
   return db;
 }

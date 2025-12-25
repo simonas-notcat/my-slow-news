@@ -12,14 +12,19 @@ program
   .description("Find recurring themes in a subreddit")
   .option("-d, --days <days>", "Number of days to analyze", "30")
   .action(async (subreddit, options) => {
-    console.log(`Finding themes in r/${subreddit} (last ${options.days} days)\n`);
+    const days = parseInt(options.days, 10);
+    if (isNaN(days) || days < 0) {
+      console.error("Error: --days must be a positive number");
+      process.exit(1);
+    }
+    console.log(`Finding themes in r/${subreddit} (last ${days} days)\n`);
 
     try {
       const config = loadConfig();
       const db = await getDb(config);
 
       const cutoff = new Date();
-      cutoff.setDate(cutoff.getDate() - parseInt(options.days));
+      cutoff.setDate(cutoff.getDate() - days);
 
       // Find most common predicates (themes)
       const predicates = await db.query<any[][]>(`
@@ -68,6 +73,11 @@ program
   .option("-o, --object <object>", "Filter by object")
   .option("-d, --days <days>", "Number of days to search", "7")
   .action(async (options) => {
+    const days = parseInt(options.days, 10);
+    if (isNaN(days) || days < 0) {
+      console.error("Error: --days must be a positive number");
+      process.exit(1);
+    }
     console.log("Searching claims...\n");
 
     try {
@@ -75,7 +85,7 @@ program
       const db = await getDb(config);
 
       const cutoff = new Date();
-      cutoff.setDate(cutoff.getDate() - parseInt(options.days));
+      cutoff.setDate(cutoff.getDate() - days);
 
       let query = `
         SELECT *
