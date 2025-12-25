@@ -52,81 +52,84 @@ program
       const config = loadConfig();
       const db = await getDb(config);
 
-      // Find or create the claim
-      const existingClaim = await db.query<any[][]>(
-        `SELECT * FROM claim WHERE subject = $subject AND predicate = $predicate AND object = $object`,
-        { subject, predicate, object }
-      );
+      try {
+        // Use transaction for atomicity
+        await db.query("BEGIN TRANSACTION");
 
-      let claimId: string | undefined;
-
-      if (existingClaim[0]?.length > 0) {
-        claimId = existingClaim[0]?.[0]?.id;
-        if (claimId) {
-          console.log(`\nFound existing claim: ${claimId}`);
-        }
-      }
-
-      if (!claimId) {
-        // Create new claim
-        const newClaim = await db.query<any[][]>(
-          `CREATE claim SET
-            subject = $subject,
-            predicate = $predicate,
-            object = $object,
-            confidence = 1.0,
-            extracted_at = time::now()`,
+        // Find or create the claim
+        const existingClaim = await db.query<any[][]>(
+          `SELECT * FROM claim WHERE subject = $subject AND predicate = $predicate AND object = $object`,
           { subject, predicate, object }
         );
-        claimId = newClaim[0]?.[0]?.id;
+
+        let claimId: string | undefined;
+
+        if (existingClaim[0]?.length > 0) {
+          claimId = existingClaim[0]?.[0]?.id;
+          if (claimId) {
+            console.log(`\nFound existing claim: ${claimId}`);
+          }
+        }
+
         if (!claimId) {
-          console.error("Error: Failed to create claim in database");
-          await closeDb();
-          process.exit(1);
+          // Create new claim
+          const newClaim = await db.query<any[][]>(
+            `CREATE claim SET
+              subject = $subject,
+              predicate = $predicate,
+              object = $object,
+              confidence = 1.0,
+              extracted_at = time::now()`,
+            { subject, predicate, object }
+          );
+          claimId = newClaim[0]?.[0]?.id;
+          if (!claimId) {
+            throw new Error("Failed to create claim in database");
+          }
+          console.log(`\nCreated new claim: ${claimId}`);
         }
-        console.log(`\nCreated new claim: ${claimId}`);
-      }
 
-      // Update or create stance record
-      const existingStances = await db.query<any[][]>(
-        `SELECT * FROM claim_stances WHERE claim = $claimId`,
-        { claimId }
-      );
-
-      if (existingStances[0]?.length > 0) {
-        const updateResult = await db.query<any[][]>(
-          `UPDATE claim_stances SET
-            user_stance = $stance,
-            user_note = $note
-          WHERE claim = $claimId`,
-          { claimId, stance: stanceMap[stance], note: options.note || null }
+        // Update or create stance record
+        const existingStances = await db.query<any[][]>(
+          `SELECT * FROM claim_stances WHERE claim = $claimId`,
+          { claimId }
         );
-        if (!updateResult[0]?.length) {
-          console.error("Warning: Stance update may not have succeeded");
-        } else {
+
+        if (existingStances[0]?.length > 0) {
+          await db.query(
+            `UPDATE claim_stances SET
+              user_stance = $stance,
+              user_note = $note
+            WHERE claim = $claimId`,
+            { claimId, stance: stanceMap[stance], note: options.note || null }
+          );
           console.log("Updated existing stance record");
+        } else {
+          const createResult = await db.query<any[][]>(
+            `CREATE claim_stances SET
+              claim = $claimId,
+              content_author_stance = 'not-stated',
+              commenter_agree_pct = 0,
+              commenter_disagree_pct = 0,
+              user_stance = $stance,
+              user_note = $note`,
+            { claimId, stance: stanceMap[stance], note: options.note || null }
+          );
+          if (!createResult[0]?.length) {
+            throw new Error("Failed to create stance record");
+          }
+          console.log("Created new stance record");
         }
-      } else {
-        const createResult = await db.query<any[][]>(
-          `CREATE claim_stances SET
-            claim = $claimId,
-            content_author_stance = 'not-stated',
-            commenter_agree_pct = 0,
-            commenter_disagree_pct = 0,
-            user_stance = $stance,
-            user_note = $note`,
-          { claimId, stance: stanceMap[stance], note: options.note || null }
-        );
-        if (!createResult[0]?.length) {
-          console.error("Error: Failed to create stance record");
-          await closeDb();
-          process.exit(1);
-        }
-        console.log("Created new stance record");
-      }
 
-      await closeDb();
-      console.log("\nStance saved successfully!");
+        await db.query("COMMIT TRANSACTION");
+        console.log("\nStance saved successfully!");
+      } catch (error) {
+        // Rollback on any error
+        await db.query("CANCEL TRANSACTION").catch(() => {});
+        throw error;
+      } finally {
+        await closeDb();
+      }
     } catch (error) {
       console.error("Error saving stance:", error);
       process.exit(1);

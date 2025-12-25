@@ -124,3 +124,29 @@ export interface PostSummary {
   notable_comments: string[];
   claims: ExtractedClaim[];
 }
+
+// Query result types for type-safe database queries
+export interface PredicateCount {
+  predicate: string;
+  count: number;
+}
+
+export interface SubjectCount {
+  subject: string;
+  count: number;
+}
+
+export interface ClaimWithStance extends ClaimRecord {
+  claim?: ClaimRecord; // For FETCH queries
+  user_stance?: string;
+  user_note?: string;
+}
+
+export interface PredicateRecord {
+  id?: string;
+  name: string;
+  description?: string;
+  is_builtin: boolean;
+  first_seen: Date;
+  usage_count: number;
+}
