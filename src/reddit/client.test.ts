@@ -15,7 +15,7 @@ describe("reddit/client", () => {
 
   beforeEach(() => {
     mockFetch = mock(() => Promise.resolve(new Response("{}")));
-    globalThis.fetch = mockFetch as typeof fetch;
+    globalThis.fetch = mockFetch as unknown as typeof fetch;
     clearCachedToken(); // Reset token cache between tests
   });
 
