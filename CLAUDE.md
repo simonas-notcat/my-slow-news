@@ -268,10 +268,12 @@ describe("my tests", () => {
 
 ### Test Patterns
 
-- **Reset state between tests**: Use `beforeEach` to reset module state (e.g., `resetUsageTracker()`)
+- **Reset state between tests**: Use `beforeEach` to reset module state (e.g., `resetUsageTracker()`, `clearCachedToken()`)
 - **Mock external dependencies**: Never make real API calls in tests
 - **Type assertions for mock calls**: Use `as [string, RequestInit]` for mock call arguments
 - **Test error cases**: Always test error handling paths
+- **Avoid Jest-specific APIs**: Don't use `expect.unreachable()` - use standard `throw new Error()` instead
+- **Clear cached state**: Modules with global state (like token caching) need reset functions for testing
 
 ### Existing Test Coverage
 
