@@ -1,0 +1,29 @@
+# My Slow News Configuration
+
+sources:
+  reddit:
+    subreddits:
+      - programming
+      - rust
+      - typescript
+      - selfhosted
+    posts_per_subreddit: 5
+    lookback_hours: 24
+    min_relative_score: 1.0  # multiplier of subreddit average
+    max_comments_per_post: 50
+
+llm:
+  provider: anthropic
+  model: claude-sonnet-4-20250514
+  daily_budget_usd: 5.0
+
+output:
+  digest_dir: ./digests
+  format: markdown
+
+database:
+  url: ws://localhost:8000/rpc
+  namespace: myslownews
+  database: main
+  username: root
+  password: root

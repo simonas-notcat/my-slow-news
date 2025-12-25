@@ -1,0 +1,50 @@
+services:
+  surrealdb:
+    image: surrealdb/surrealdb:v2
+    container_name: myslownews-db
+    ports:
+      - "8000:8000"
+    volumes:
+      - surrealdb_data:/data
+    command: start --user root --pass root file:/data/myslownews.db
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: myslownews-app
+    depends_on:
+      - surrealdb
+    environment:
+      - DATABASE_URL=ws://surrealdb:8000/rpc
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - REDDIT_CLIENT_ID=${REDDIT_CLIENT_ID}
+      - REDDIT_CLIENT_SECRET=${REDDIT_CLIENT_SECRET}
+    volumes:
+      - ./digests:/app/digests
+      - ./config.yaml:/app/config.yaml:ro
+    restart: unless-stopped
+
+  # Cron service for scheduled digest generation
+  cron:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: myslownews-cron
+    depends_on:
+      - surrealdb
+    environment:
+      - DATABASE_URL=ws://surrealdb:8000/rpc
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - REDDIT_CLIENT_ID=${REDDIT_CLIENT_ID}
+      - REDDIT_CLIENT_SECRET=${REDDIT_CLIENT_SECRET}
+    volumes:
+      - ./digests:/app/digests
+      - ./config.yaml:/app/config.yaml:ro
+    command: >
+      sh -c "echo '0 7 * * * cd /app && bun run digest >> /var/log/cron.log 2>&1' | crontab - && crond -f"
+    restart: unless-stopped
+
+volumes:
+  surrealdb_data:
