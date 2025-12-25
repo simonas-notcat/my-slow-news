@@ -2,10 +2,9 @@
  * Reddit client using RSS + web scraping (no OAuth required)
  */
 
-import type { RedditPost, RedditComment } from "../types";
+import type { RedditPost, RedditComment, ScrapedContent } from "../types";
 import { fetchSubredditRSS } from "./rss-fetcher";
 import { scrapePostDetails } from "./scraper";
-import { globalRateLimiter } from "../utils/rate-limiter";
 
 // Validate subreddit name to prevent URL injection
 function validateSubredditName(subreddit: string): void {
@@ -18,10 +17,10 @@ function validateSubredditName(subreddit: string): void {
 
 /**
  * Fetch posts from a subreddit using RSS feed
- * Then scrape full details for each post
+ * Then scrape full details for each post (including comments)
  * @param subreddit Subreddit name (without r/ prefix)
  * @param options Fetching options
- * @returns Array of Reddit posts with full details
+ * @returns Array of scraped content (posts with comments)
  */
 export async function fetchSubredditPosts(
   subreddit: string,
@@ -29,7 +28,7 @@ export async function fetchSubredditPosts(
     limit?: number;
     timeframe?: "hour" | "day" | "week" | "month" | "year" | "all";
   } = {}
-): Promise<RedditPost[]> {
+): Promise<ScrapedContent[]> {
   validateSubredditName(subreddit);
   const { limit = 25, timeframe = "day" } = options;
 
@@ -39,13 +38,13 @@ export async function fetchSubredditPosts(
 
     console.log(`  Found ${rssItems.length} posts in RSS feed for r/${subreddit}`);
 
-    // Step 2: Scrape full details for each post
-    const posts: RedditPost[] = [];
+    // Step 2: Scrape full details for each post (includes comments)
+    const results: ScrapedContent[] = [];
 
     for (const item of rssItems) {
       try {
-        const { post } = await scrapePostDetails(item.permalink);
-        posts.push(post);
+        const scrapedContent = await scrapePostDetails(item.permalink);
+        results.push(scrapedContent);
 
         // Rate limiting is handled inside scrapePostDetails
       } catch (error) {
@@ -54,8 +53,8 @@ export async function fetchSubredditPosts(
       }
     }
 
-    console.log(`  Successfully scraped ${posts.length}/${rssItems.length} posts`);
-    return posts;
+    console.log(`  Successfully scraped ${results.length}/${rssItems.length} posts`);
+    return results;
   } catch (error) {
     console.error(`Failed to fetch posts from r/${subreddit}:`, error);
     return [];
@@ -67,15 +66,15 @@ export async function fetchSubredditPosts(
  * @param subreddit Subreddit name (without r/ prefix)
  * @param postId Reddit post ID
  * @param options Fetching options
- * @returns Array of Reddit comments
+ * @returns Array of Reddit comments (unsorted, caller should sort as needed)
  */
 export async function fetchPostComments(
   subreddit: string,
   postId: string,
-  options: { limit?: number; sort?: "top" | "best" | "new" } = {}
+  options: { limit?: number } = {}
 ): Promise<RedditComment[]> {
   validateSubredditName(subreddit);
-  const { limit = 50, sort = "top" } = options;
+  const { limit = 50 } = options;
 
   try {
     // Construct permalink
@@ -84,15 +83,8 @@ export async function fetchPostComments(
     // Scrape post and comments
     const { comments } = await scrapePostDetails(permalink);
 
-    // Sort comments by score (top)
-    const sortedComments = comments.sort((a, b) => {
-      if (sort === "top") return b.score - a.score;
-      if (sort === "new") return b.created_utc - a.created_utc;
-      return b.score - a.score; // Default to top
-    });
-
-    // Apply limit
-    return sortedComments.slice(0, limit);
+    // Apply limit (caller should sort as needed)
+    return comments.slice(0, limit);
   } catch (error) {
     console.error(`Failed to fetch comments for ${postId}:`, error);
     return [];

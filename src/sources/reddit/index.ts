@@ -2,10 +2,9 @@
  * High-level Reddit fetching orchestration using RSS + web scraping
  */
 
-import { fetchSubredditPosts, fetchPostComments } from "./client";
+import { fetchSubredditPosts } from "./client";
 import type { RedditPost, RedditComment } from "../types";
 import type { Config } from "../../types";
-import { sleep } from "../../utils/retry";
 
 export interface PostWithComments {
   post: RedditPost;
@@ -27,47 +26,38 @@ export async function fetchTopPostsWithComments(
     console.log(`Fetching r/${subreddit}...`);
 
     try {
-      // Fetch more posts than needed to allow filtering
-      const posts = await fetchSubredditPosts(subreddit, {
+      // Fetch posts with comments (scraping returns both)
+      const scrapedContent = await fetchSubredditPosts(subreddit, {
         limit: redditConfig.posts_per_subreddit * 2,
         timeframe: redditConfig.lookback_hours <= 24 ? "day" : "week",
       });
 
       // Filter to posts within the lookback window
       const cutoffTime = Date.now() / 1000 - redditConfig.lookback_hours * 3600;
-      const recentPosts = posts.filter((p) => p.created_utc >= cutoffTime);
+      const recentContent = scrapedContent.filter((sc) => sc.post.created_utc >= cutoffTime);
 
       // Calculate average score for relative filtering
       const avgScore =
-        recentPosts.reduce((sum, p) => sum + p.score, 0) / (recentPosts.length || 1);
+        recentContent.reduce((sum, sc) => sum + sc.post.score, 0) / (recentContent.length || 1);
 
       // Filter by relative score threshold
-      const filteredPosts = recentPosts
-        .filter((p) => p.score >= avgScore * redditConfig.min_relative_score)
+      const filteredContent = recentContent
+        .filter((sc) => sc.post.score >= avgScore * redditConfig.min_relative_score)
         .slice(0, redditConfig.posts_per_subreddit);
 
       console.log(
-        `  Found ${recentPosts.length} recent posts, selected ${filteredPosts.length} (avg score: ${Math.round(avgScore)})`
+        `  Found ${recentContent.length} recent posts, selected ${filteredContent.length} (avg score: ${Math.round(avgScore)})`
       );
 
-      // Fetch comments for each post
-      const postsWithComments: PostWithComments[] = [];
-
-      for (const post of filteredPosts) {
-        const comments = await fetchPostComments(subreddit, post.id, {
-          limit: redditConfig.max_comments_per_post,
-        });
-
+      // Process comments for each post (already fetched, just need to sort and limit)
+      const postsWithComments: PostWithComments[] = filteredContent.map((sc) => {
         // Sort by score and take top comments
-        const topComments = comments
+        const topComments = sc.comments
           .sort((a, b) => b.score - a.score)
           .slice(0, redditConfig.max_comments_per_post);
 
-        postsWithComments.push({ post, comments: topComments });
-
-        // Small delay between posts (rate limiting is also inside scraper)
-        await sleep(500);
-      }
+        return { post: sc.post, comments: topComments };
+      });
 
       results.set(subreddit, postsWithComments);
     } catch (error) {
