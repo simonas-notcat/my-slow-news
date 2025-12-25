@@ -29,29 +29,8 @@ export const ConfigSchema = z.object({
 
 export type Config = z.infer<typeof ConfigSchema>;
 
-// Reddit types
-export interface RedditPost {
-  id: string;
-  subreddit: string;
-  title: string;
-  selftext: string;
-  author: string;
-  url: string;
-  permalink: string;
-  score: number;
-  num_comments: number;
-  created_utc: number;
-}
-
-export interface RedditComment {
-  id: string;
-  post_id: string;
-  author: string;
-  body: string;
-  score: number;
-  parent_id: string;
-  created_utc: number;
-}
+// Re-export Reddit types from sources
+export type { RedditPost, RedditComment } from "../sources/types";
 
 // Database record types
 export interface PostRecord {

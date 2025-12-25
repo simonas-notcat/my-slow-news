@@ -35,13 +35,6 @@ export function getEnvVar(name: string, required = true): string {
   return value ?? "";
 }
 
-export function getRedditCredentials() {
-  return {
-    clientId: getEnvVar("REDDIT_CLIENT_ID"),
-    clientSecret: getEnvVar("REDDIT_CLIENT_SECRET"),
-  };
-}
-
 export function getAnthropicApiKey(): string {
   return getEnvVar("ANTHROPIC_API_KEY");
 }

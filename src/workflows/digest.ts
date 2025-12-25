@@ -2,7 +2,7 @@ import { createWorkflow, createStep } from "@mastra/core/workflows";
 import { z } from "zod";
 import { loadConfig } from "../config";
 import { getSummarizerAgent, getExtractorAgent } from "../mastra";
-import { fetchTopPostsWithComments, type PostWithComments } from "../reddit";
+import { fetchTopPostsWithComments, type PostWithComments } from "../sources/reddit";
 import { getDb, closeDb } from "../db";
 import { writeFileSync, mkdirSync } from "fs";
 import { dirname, join } from "path";
@@ -125,9 +125,11 @@ const fetchContentStep = createStep({
     posts: z.array(FetchedPostSchema),
     date: z.string(),
   }),
-  execute: async ({ inputData }) => {
+  execute: async (context) => {
     const config = loadConfig();
-    const date = inputData.date || new Date().toISOString().split("T")[0];
+    // Handle both old and new Mastra API formats
+    const input = context.inputData || context;
+    const date = input?.date || new Date().toISOString().split("T")[0];
 
     console.log(`\nFetching content for ${date}...`);
     const postsMap = await fetchTopPostsWithComments(config);
@@ -156,8 +158,9 @@ const summarizeStep = createStep({
     summaries: z.array(PostWithSummarySchema),
     date: z.string(),
   }),
-  execute: async ({ inputData }) => {
-    const { posts, date } = inputData;
+  execute: async (context) => {
+    const input = context.inputData || context;
+    const { posts, date } = input;
     const config = loadConfig();
     const agent = getSummarizerAgent();
 
@@ -282,8 +285,9 @@ const extractClaimsStep = createStep({
     all_claims: z.array(WorkflowClaimSchema),
     date: z.string(),
   }),
-  execute: async ({ inputData }) => {
-    const { summaries, date } = inputData;
+  execute: async (context) => {
+    const input = context.inputData || context;
+    const { summaries, date } = input;
     const config = loadConfig();
     const agent = getExtractorAgent();
 
@@ -401,8 +405,9 @@ const generateDigestStep = createStep({
     date: z.string(),
   }),
   outputSchema: DigestWithDataSchema,
-  execute: async ({ inputData }) => {
-    const { summaries_with_claims, all_claims, date } = inputData;
+  execute: async (context) => {
+    const input = context.inputData || context;
+    const { summaries_with_claims, all_claims, date } = input;
     const config = loadConfig();
 
     console.log(`\nGenerating digest for ${date}...`);
@@ -473,8 +478,9 @@ const saveToDatabaseStep = createStep({
   id: "save-to-database",
   inputSchema: DigestWithDataSchema,
   outputSchema: DigestOutputSchema,
-  execute: async ({ inputData }) => {
-    const { summaries_with_claims, all_claims, date, digest_path } = inputData;
+  execute: async (context) => {
+    const input = context.inputData || context;
+    const { summaries_with_claims, all_claims, date, digest_path } = input;
     console.log(`\nSaving to database...`);
 
     const config = loadConfig();
@@ -486,9 +492,9 @@ const saveToDatabaseStep = createStep({
       console.error("Failed to connect to database:", error);
       console.log("Skipping database persistence");
       return {
-        digest_path: inputData.digest_path,
-        posts_processed: inputData.posts_processed,
-        claims_extracted: inputData.claims_extracted,
+        digest_path: input.digest_path,
+        posts_processed: input.posts_processed,
+        claims_extracted: input.claims_extracted,
       };
     }
 
@@ -623,9 +629,9 @@ const saveToDatabaseStep = createStep({
     }
 
     return {
-      digest_path: inputData.digest_path,
-      posts_processed: inputData.posts_processed,
-      claims_extracted: inputData.claims_extracted,
+      digest_path: input.digest_path,
+      posts_processed: input.posts_processed,
+      claims_extracted: input.claims_extracted,
     };
   },
 });
@@ -645,9 +651,16 @@ export const digestWorkflow = createWorkflow({
 
 // Helper function to run the workflow
 export async function runDigestWorkflow(date?: string) {
-  const result = await (digestWorkflow as any).execute({
-    inputData: { date },
-  });
-
-  return result;
+  try {
+    // New Mastra API: create run and start
+    const run = await digestWorkflow.createRunAsync();
+    const result = await run.start({ date });
+    return result;
+  } catch (error: any) {
+    // If the error is workflow-related, try extracting the actual result
+    if (error?.result) {
+      return error.result;
+    }
+    throw error;
+  }
 }
