@@ -98,11 +98,12 @@ export function isLinkPost(post: RedditPost): boolean {
   const hasNoContent = !post.selftext || post.selftext.trim().length < 50;
 
   // Check if URL is external (not reddit)
-  const isExternalUrl =
+  const isExternalUrl = Boolean(
     post.url &&
     !post.url.includes("reddit.com") &&
     !post.url.includes("redd.it") &&
-    (post.url.startsWith("http://") || post.url.startsWith("https://"));
+    (post.url.startsWith("http://") || post.url.startsWith("https://"))
+  );
 
   return hasNoContent && isExternalUrl;
 }
