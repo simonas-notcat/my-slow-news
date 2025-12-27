@@ -121,6 +121,9 @@ const PostWithClaimsSchema = PostWithSummarySchema.extend({
   }).optional(),
 });
 
+// Type alias for use in callbacks
+type PostWithClaims = z.infer<typeof PostWithClaimsSchema>;
+
 // Extended schema for passing data through to database step
 const DigestWithDataSchema = z.object({
   digest_path: z.string(),
@@ -477,7 +480,7 @@ const generateDigestStep = createStep({
     if (shouldSynthesizeThemes(summaries_with_claims.length)) {
       try {
         const agent = getSummarizerAgent();
-        const postInputs: PostSummaryInput[] = summaries_with_claims.map((item) => ({
+        const postInputs: PostSummaryInput[] = summaries_with_claims.map((item: PostWithClaims) => ({
           subreddit: item.subreddit,
           title: item.post.title,
           summary: item.summary.summary,
