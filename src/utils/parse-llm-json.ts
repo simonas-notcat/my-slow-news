@@ -111,6 +111,11 @@ export const SummaryResponseSchema = z.object({
   notable_comments: z.array(z.string()).optional().default([]),
   sentiment: z.enum(["positive", "negative", "mixed", "neutral"]).optional().default("neutral"),
   key_topics: z.array(z.string()).optional().default([]),
+  // Quality confidence scoring fields
+  confidence: z.number().min(0).max(1).optional().default(0.7),
+  controversy_level: z.enum(["none", "low", "medium", "high"]).optional().default("none"),
+  information_density: z.enum(["sparse", "moderate", "rich"]).optional().default("moderate"),
+  missing_context: z.array(z.string()).optional().default([]),
 });
 
 export type SummaryResponse = z.infer<typeof SummaryResponseSchema>;
