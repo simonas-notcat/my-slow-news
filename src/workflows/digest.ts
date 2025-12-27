@@ -142,7 +142,7 @@ const fetchContentStep = createStep({
     posts: z.array(FetchedPostSchema),
     date: z.string(),
   }),
-  execute: async (context) => {
+  execute: async (context: { inputData?: { date?: string }; date?: string }) => {
     const config = loadConfig();
     // Handle both old and new Mastra API formats
     const input = context.inputData || context;
@@ -175,9 +175,9 @@ const summarizeStep = createStep({
     summaries: z.array(PostWithSummarySchema),
     date: z.string(),
   }),
-  execute: async (context) => {
+  execute: async (context: { inputData?: { posts: z.infer<typeof FetchedPostSchema>[]; date: string }; posts?: z.infer<typeof FetchedPostSchema>[]; date?: string }) => {
     const input = context.inputData || context;
-    const { posts, date } = input;
+    const { posts, date } = input as { posts: z.infer<typeof FetchedPostSchema>[]; date: string };
     const config = loadConfig();
     const agent = getSummarizerAgent();
 
@@ -223,7 +223,7 @@ ${contentSection}
 
 Comments (${comments.length} total, ${selectedComments.length} shown - selected for diversity):
 ${selectedComments
-  .map((c: any) => `- u/${c.author} (${c.score} pts): ${c.body.slice(0, 500)}`)
+  .map((c: z.infer<typeof RedditCommentSchema>) => `- u/${c.author} (${c.score} pts): ${c.body.slice(0, 500)}`)
   .join("\n")}${controversyHint}
 
 Return a JSON response with: summary, notable_comments, sentiment, key_topics, confidence (0-1), controversy_level (none/low/medium/high), information_density (sparse/moderate/rich), and missing_context (array of strings).`;
@@ -249,7 +249,7 @@ Return a JSON response with: summary, notable_comments, sentiment, key_topics, c
           }
         );
 
-        const text = typeof result === "string" ? result : result.text;
+        const text = typeof result === "string" ? result : (result as { text: string }).text;
 
         // Record actual usage (estimate output tokens from response)
         recordUsage(inputTokens, estimateTokens(text));
@@ -337,9 +337,9 @@ const extractClaimsStep = createStep({
     all_claims: z.array(WorkflowClaimSchema),
     date: z.string(),
   }),
-  execute: async (context) => {
+  execute: async (context: { inputData?: { summaries: z.infer<typeof PostWithSummarySchema>[]; date: string }; summaries?: z.infer<typeof PostWithSummarySchema>[]; date?: string }) => {
     const input = context.inputData || context;
-    const { summaries, date } = input;
+    const { summaries, date } = input as { summaries: z.infer<typeof PostWithSummarySchema>[]; date: string };
     const config = loadConfig();
     const agent = getExtractorAgent();
 
@@ -383,7 +383,7 @@ Extract claims as RDF triples and analyze commenter stances. Return JSON.`;
           }
         );
 
-        const text = typeof result === "string" ? result : result.text;
+        const text = typeof result === "string" ? result : (result as { text: string }).text;
 
         // Record actual usage
         recordUsage(inputTokens, estimateTokens(text));
@@ -405,7 +405,7 @@ Extract claims as RDF triples and analyze commenter stances. Return JSON.`;
         }
 
         // Normalize claims to ensure all fields have values (Zod defaults are applied during parsing)
-        const normalizedClaims = (extracted.claims || []).map((c) => ({
+        const normalizedClaims = (extracted.claims || []).map((c: { subject: string; predicate: string; object: string; confidence?: number; source_stance?: string }) => ({
           subject: c.subject,
           predicate: c.predicate,
           object: c.object,
@@ -457,9 +457,9 @@ const generateDigestStep = createStep({
     date: z.string(),
   }),
   outputSchema: DigestWithDataSchema,
-  execute: async (context) => {
+  execute: async (context: { inputData?: z.infer<typeof DigestWithDataSchema>; summaries_with_claims?: z.infer<typeof PostWithClaimsSchema>[]; all_claims?: z.infer<typeof WorkflowClaimSchema>[]; date?: string }) => {
     const input = context.inputData || context;
-    const { summaries_with_claims, all_claims, date } = input;
+    const { summaries_with_claims, all_claims, date } = input as z.infer<typeof DigestWithDataSchema>;
     const config = loadConfig();
 
     console.log(`\nGenerating digest for ${date}...`);
@@ -569,9 +569,9 @@ const saveToDatabaseStep = createStep({
   id: "save-to-database",
   inputSchema: DigestWithDataSchema,
   outputSchema: DigestOutputSchema,
-  execute: async (context) => {
+  execute: async (context: { inputData?: z.infer<typeof DigestWithDataSchema> } & Partial<z.infer<typeof DigestWithDataSchema>>) => {
     const input = context.inputData || context;
-    const { summaries_with_claims, all_claims, date, digest_path } = input;
+    const { summaries_with_claims, all_claims, date, digest_path } = input as z.infer<typeof DigestWithDataSchema>;
     console.log(`\nSaving to database...`);
 
     const config = loadConfig();

@@ -9,7 +9,7 @@ program
   .argument("<claim>", 'The claim in format "Subject predicate Object"')
   .argument("<stance>", "Your stance: agree, disagree, neutral, uncertain")
   .option("-n, --note <note>", "Optional note explaining your stance")
-  .action(async (claimStr, stanceArg, options) => {
+  .action(async (claimStr: string, stanceArg: string, options: { note?: string }) => {
     console.log("My Slow News - Stance Manager\n");
 
     try {

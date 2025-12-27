@@ -83,7 +83,7 @@ export async function fetchSubredditRSS(
     const feed = await parser.parseString(xml);
 
     // Parse RSS items into our format
-    const items: RSSItem[] = feed.items.map((item) => {
+    const items: RSSItem[] = feed.items.map((item: { link?: string; author?: string; title?: string; pubDate?: string }) => {
       const link = item.link || "";
       const permalink = toPermalink(link);
       const id = extractPostId(permalink);

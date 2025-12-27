@@ -14,7 +14,7 @@ export const saveDigestTool = createTool({
     success: z.boolean(),
     path: z.string(),
   }),
-  execute: async ({ context }) => {
+  execute: async ({ context }: { context: { file_path: string; content: string } }) => {
     const { file_path, content } = context;
 
     // Ensure directory exists

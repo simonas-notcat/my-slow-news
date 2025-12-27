@@ -50,7 +50,7 @@ program
   .option("-d, --date <date>", "Date for the digest (YYYY-MM-DD)")
   .option("--from <date>", "Start date for range")
   .option("--to <date>", "End date for range")
-  .action(async (options) => {
+  .action(async (options: { date?: string; from?: string; to?: string }) => {
     console.log("My Slow News - Digest Generator\n");
     console.log("================================\n");
 

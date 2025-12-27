@@ -218,7 +218,7 @@ describe("Reddit Scraper", () => {
     });
 
     test("should construct correct old Reddit URL", async () => {
-      mockFetch.mockImplementation((url) => {
+      mockFetch.mockImplementation((url: string | URL | Request) => {
         const urlStr = typeof url === "string" ? url : url.toString();
         expect(urlStr).toBe("https://old.reddit.com/r/programming/comments/abc123/");
         return Promise.resolve(new Response(samplePostHTML));
@@ -228,7 +228,7 @@ describe("Reddit Scraper", () => {
     });
 
     test("should use random user agent", async () => {
-      mockFetch.mockImplementation((url, init) => {
+      mockFetch.mockImplementation((_url: string | URL | Request, init?: RequestInit) => {
         const headers = (init as RequestInit).headers as Record<string, string>;
         expect(headers["User-Agent"]).toBeDefined();
         expect(headers["User-Agent"].length).toBeGreaterThan(0);

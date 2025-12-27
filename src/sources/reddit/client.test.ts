@@ -85,7 +85,7 @@ describe("Reddit Client", () => {
     });
 
     test("should accept timeframe options", async () => {
-      mockFetch.mockImplementation((url) => {
+      mockFetch.mockImplementation((url: string | URL | Request) => {
         const urlStr = typeof url === "string" ? url : url.toString();
         // Verify the timeframe is in the URL
         if (urlStr.includes("t=week")) {
@@ -122,7 +122,7 @@ describe("Reddit Client", () => {
     });
 
     test("should construct correct permalink", async () => {
-      mockFetch.mockImplementation((url) => {
+      mockFetch.mockImplementation((url: string | URL | Request) => {
         const urlStr = typeof url === "string" ? url : url.toString();
         // Return minimal HTML for scraping
         if (urlStr.includes("/r/programming/comments/abc123/")) {

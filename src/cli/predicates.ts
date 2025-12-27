@@ -8,7 +8,7 @@ program
   .description("Manage the predicate ontology")
   .option("--new", "Show only new predicates (not built-in)")
   .option("--all", "Show all predicates with usage counts")
-  .action(async (options) => {
+  .action(async (options: { new?: boolean; all?: boolean }) => {
     console.log("My Slow News - Predicate Registry\n");
 
     const config = loadConfig();
@@ -51,8 +51,8 @@ program
         console.log("---------------");
 
         // Group by built-in vs new
-        const builtIn = (predicates[0] || []).filter((p) => p.is_builtin);
-        const custom = (predicates[0] || []).filter((p) => !p.is_builtin);
+        const builtIn = (predicates[0] || []).filter((p: { is_builtin: boolean }) => p.is_builtin);
+        const custom = (predicates[0] || []).filter((p: { is_builtin: boolean }) => !p.is_builtin);
 
         console.log("\nBuilt-in:");
         for (const p of builtIn) {
