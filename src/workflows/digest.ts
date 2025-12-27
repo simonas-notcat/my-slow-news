@@ -124,6 +124,49 @@ const PostWithClaimsSchema = PostWithSummarySchema.extend({
 // Type alias for use in callbacks
 type PostWithClaims = z.infer<typeof PostWithClaimsSchema>;
 
+// ============================================================================
+// Step Context Types - Named types for workflow step execute functions
+// ============================================================================
+
+type FetchedPost = z.infer<typeof FetchedPostSchema>;
+type PostWithSummary = z.infer<typeof PostWithSummarySchema>;
+type WorkflowClaim = z.infer<typeof WorkflowClaimSchema>;
+type DigestWithData = z.infer<typeof DigestWithDataSchema>;
+type RedditComment = z.infer<typeof RedditCommentSchema>;
+
+/** Context for fetch-content step */
+type FetchContentContext = {
+  inputData?: { date?: string };
+  date?: string;
+};
+
+/** Context for summarize-posts step */
+type SummarizeStepContext = {
+  inputData?: { posts: FetchedPost[]; date: string };
+  posts?: FetchedPost[];
+  date?: string;
+};
+
+/** Context for extract-claims step */
+type ExtractClaimsContext = {
+  inputData?: { summaries: PostWithSummary[]; date: string };
+  summaries?: PostWithSummary[];
+  date?: string;
+};
+
+/** Context for generate-digest step */
+type GenerateDigestContext = {
+  inputData?: DigestWithData;
+  summaries_with_claims?: PostWithClaims[];
+  all_claims?: WorkflowClaim[];
+  date?: string;
+};
+
+/** Context for save-to-database step */
+type SaveToDatabaseContext = {
+  inputData?: DigestWithData;
+} & Partial<DigestWithData>;
+
 // Extended schema for passing data through to database step
 const DigestWithDataSchema = z.object({
   digest_path: z.string(),
@@ -142,7 +185,7 @@ const fetchContentStep = createStep({
     posts: z.array(FetchedPostSchema),
     date: z.string(),
   }),
-  execute: async (context) => {
+  execute: async (context: FetchContentContext) => {
     const config = loadConfig();
     // Handle both old and new Mastra API formats
     const input = context.inputData || context;
@@ -175,14 +218,15 @@ const summarizeStep = createStep({
     summaries: z.array(PostWithSummarySchema),
     date: z.string(),
   }),
-  execute: async (context) => {
-    const input = context.inputData || context;
-    const { posts, date } = input;
+  execute: async (context: SummarizeStepContext) => {
+    const input = context.inputData ?? context;
+    const posts = input.posts ?? [];
+    const date = input.date ?? new Date().toISOString().split("T")[0];
     const config = loadConfig();
     const agent = getSummarizerAgent();
 
     console.log(`\nSummarizing ${posts.length} posts...`);
-    const summaries: z.infer<typeof PostWithSummarySchema>[] = [];
+    const summaries: PostWithSummary[] = [];
 
     for (const { subreddit, data } of posts) {
       const { post, comments } = data;
@@ -223,7 +267,7 @@ ${contentSection}
 
 Comments (${comments.length} total, ${selectedComments.length} shown - selected for diversity):
 ${selectedComments
-  .map((c: any) => `- u/${c.author} (${c.score} pts): ${c.body.slice(0, 500)}`)
+  .map((c: RedditComment) => `- u/${c.author} (${c.score} pts): ${c.body.slice(0, 500)}`)
   .join("\n")}${controversyHint}
 
 Return a JSON response with: summary, notable_comments, sentiment, key_topics, confidence (0-1), controversy_level (none/low/medium/high), information_density (sparse/moderate/rich), and missing_context (array of strings).`;
@@ -249,7 +293,7 @@ Return a JSON response with: summary, notable_comments, sentiment, key_topics, c
           }
         );
 
-        const text = typeof result === "string" ? result : result.text;
+        const text = typeof result === "string" ? result : (result as { text: string }).text;
 
         // Record actual usage (estimate output tokens from response)
         recordUsage(inputTokens, estimateTokens(text));
@@ -337,15 +381,16 @@ const extractClaimsStep = createStep({
     all_claims: z.array(WorkflowClaimSchema),
     date: z.string(),
   }),
-  execute: async (context) => {
-    const input = context.inputData || context;
-    const { summaries, date } = input;
+  execute: async (context: ExtractClaimsContext) => {
+    const input = context.inputData ?? context;
+    const summaries = input.summaries ?? [];
+    const date = input.date ?? new Date().toISOString().split("T")[0];
     const config = loadConfig();
     const agent = getExtractorAgent();
 
     console.log(`\nExtracting claims from ${summaries.length} posts...`);
-    const allClaims: z.infer<typeof WorkflowClaimSchema>[] = [];
-    const summariesWithClaims: z.infer<typeof PostWithClaimsSchema>[] = [];
+    const allClaims: WorkflowClaim[] = [];
+    const summariesWithClaims: PostWithClaims[] = [];
 
     for (const item of summaries) {
       const { post, summary } = item;
@@ -383,7 +428,7 @@ Extract claims as RDF triples and analyze commenter stances. Return JSON.`;
           }
         );
 
-        const text = typeof result === "string" ? result : result.text;
+        const text = typeof result === "string" ? result : (result as { text: string }).text;
 
         // Record actual usage
         recordUsage(inputTokens, estimateTokens(text));
@@ -405,7 +450,7 @@ Extract claims as RDF triples and analyze commenter stances. Return JSON.`;
         }
 
         // Normalize claims to ensure all fields have values (Zod defaults are applied during parsing)
-        const normalizedClaims = (extracted.claims || []).map((c) => ({
+        const normalizedClaims = (extracted.claims || []).map((c: { subject: string; predicate: string; object: string; confidence?: number; source_stance?: string }) => ({
           subject: c.subject,
           predicate: c.predicate,
           object: c.object,
@@ -457,15 +502,17 @@ const generateDigestStep = createStep({
     date: z.string(),
   }),
   outputSchema: DigestWithDataSchema,
-  execute: async (context) => {
-    const input = context.inputData || context;
-    const { summaries_with_claims, all_claims, date } = input;
+  execute: async (context: GenerateDigestContext) => {
+    const input = context.inputData ?? context;
+    const summaries_with_claims = input.summaries_with_claims ?? [];
+    const all_claims = input.all_claims ?? [];
+    const date = input.date ?? new Date().toISOString().split("T")[0];
     const config = loadConfig();
 
     console.log(`\nGenerating digest for ${date}...`);
 
     // Group by subreddit
-    const bySubreddit = new Map<string, z.infer<typeof PostWithClaimsSchema>[]>();
+    const bySubreddit = new Map<string, PostWithClaims[]>();
     for (const item of summaries_with_claims) {
       const list = bySubreddit.get(item.subreddit) || [];
       list.push(item);
@@ -569,9 +616,14 @@ const saveToDatabaseStep = createStep({
   id: "save-to-database",
   inputSchema: DigestWithDataSchema,
   outputSchema: DigestOutputSchema,
-  execute: async (context) => {
-    const input = context.inputData || context;
-    const { summaries_with_claims, all_claims, date, digest_path } = input;
+  execute: async (context: SaveToDatabaseContext) => {
+    const input = context.inputData ?? context;
+    const summaries_with_claims = input.summaries_with_claims ?? [];
+    const all_claims = input.all_claims ?? [];
+    const date = input.date ?? new Date().toISOString().split("T")[0];
+    const digest_path = input.digest_path ?? "";
+    const posts_processed = input.posts_processed ?? summaries_with_claims.length;
+    const claims_extracted = input.claims_extracted ?? all_claims.length;
     console.log(`\nSaving to database...`);
 
     const config = loadConfig();
@@ -583,9 +635,9 @@ const saveToDatabaseStep = createStep({
       console.error("Failed to connect to database:", error);
       console.log("Skipping database persistence");
       return {
-        digest_path: input.digest_path,
-        posts_processed: input.posts_processed,
-        claims_extracted: input.claims_extracted,
+        digest_path,
+        posts_processed,
+        claims_extracted,
       };
     }
 
@@ -713,9 +765,9 @@ const saveToDatabaseStep = createStep({
     }
 
     return {
-      digest_path: input.digest_path,
-      posts_processed: input.posts_processed,
-      claims_extracted: input.claims_extracted,
+      digest_path,
+      posts_processed,
+      claims_extracted,
     };
   },
 });

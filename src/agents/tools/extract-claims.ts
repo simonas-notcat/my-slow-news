@@ -27,11 +27,11 @@ export const extractClaimsTool = createTool({
     invalid_count: z.number(),
     post_id: z.string(),
   }),
-  execute: async ({ context }) => {
+  execute: async ({ context }: { context: { claims: Claim[]; post_id: string } }) => {
     const { claims, post_id } = context;
 
     // Filter out low-confidence claims
-    const validClaims = claims.filter((c) => c.confidence >= 0.5);
+    const validClaims = claims.filter((c: Claim) => c.confidence >= 0.5);
 
     return {
       valid_claims: validClaims,

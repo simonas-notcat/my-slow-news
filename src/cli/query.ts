@@ -17,8 +17,8 @@ program
   .command("themes <subreddit>")
   .description("Find recurring themes in a subreddit")
   .option("-d, --days <days>", "Number of days to analyze", "30")
-  .action(async (subreddit, options) => {
-    const days = parseInt(options.days, 10);
+  .action(async (subreddit: string, options: { days?: string }) => {
+    const days = parseInt(options.days || "30", 10);
     if (isNaN(days) || days <= 0) {
       console.error("Error: --days must be a positive number");
       process.exit(1);
@@ -78,8 +78,8 @@ program
   .option("-p, --predicate <predicate>", "Filter by predicate")
   .option("-o, --object <object>", "Filter by object")
   .option("-d, --days <days>", "Number of days to search", "7")
-  .action(async (options) => {
-    const days = parseInt(options.days, 10);
+  .action(async (options: { subject?: string; predicate?: string; object?: string; days?: string }) => {
+    const days = parseInt(options.days || "7", 10);
     if (isNaN(days) || days <= 0) {
       console.error("Error: --days must be a positive number");
       process.exit(1);
