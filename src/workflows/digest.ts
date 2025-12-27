@@ -47,6 +47,9 @@ const DigestOutputSchema = z.object({
   claims_extracted: z.number(),
 });
 
+// Export type for use in CLI and other modules
+export type DigestOutput = z.infer<typeof DigestOutputSchema>;
+
 // Schema for Reddit post data passed through workflow
 const RedditPostDataSchema = z.object({
   id: z.string(),
@@ -792,10 +795,10 @@ export async function runDigestWorkflow(date?: string) {
     const run = await digestWorkflow.createRunAsync();
     const result = await run.start({ inputData: { date } });
     return result;
-  } catch (error: any) {
+  } catch (error: unknown) {
     // If the error is workflow-related, try extracting the actual result
-    if (error?.result) {
-      return error.result;
+    if (error && typeof error === 'object' && 'result' in error) {
+      return (error as { result: DigestOutput }).result;
     }
     throw error;
   }

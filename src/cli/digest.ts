@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { program } from "commander";
-import { runDigestWorkflow } from "../workflows/digest";
+import { runDigestWorkflow, type DigestOutput } from "../workflows/digest";
 import { closeDb } from "../db";
 
 function isValidDate(dateStr: string): boolean {
@@ -96,13 +96,13 @@ program
           console.warn(`Warning: ${date} is in the future. Reddit data may be incomplete.`);
         }
         console.log(`Generating digest for: ${date}\n`);
-        const result = await runDigestWorkflow(date);
+        const result = await runDigestWorkflow(date) as DigestOutput | undefined;
 
         console.log("\n================================");
         console.log("Digest generation complete!");
-        console.log(`  Posts processed: ${(result as any)?.posts_processed || 0}`);
-        console.log(`  Claims extracted: ${(result as any)?.claims_extracted || 0}`);
-        console.log(`  File: ${(result as any)?.digest_path || "unknown"}`);
+        console.log(`  Posts processed: ${result?.posts_processed ?? 0}`);
+        console.log(`  Claims extracted: ${result?.claims_extracted ?? 0}`);
+        console.log(`  File: ${result?.digest_path ?? "unknown"}`);
       }
     } catch (error) {
       console.error("Error generating digest:", error);
