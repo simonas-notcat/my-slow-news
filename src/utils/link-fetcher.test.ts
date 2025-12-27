@@ -4,6 +4,8 @@ import {
   extractDomain,
   isDomainAllowed,
   formatLinkContentForPrompt,
+  isPrivateOrInternalHost,
+  fetchLinkContent,
 } from "./link-fetcher";
 import type { RedditPost } from "../types";
 
@@ -191,5 +193,70 @@ describe("formatLinkContentForPrompt", () => {
 
     expect(formatted.length).toBeLessThan(500);
     expect(formatted).toContain("...");
+  });
+});
+
+describe("isPrivateOrInternalHost (SSRF protection)", () => {
+  test("blocks localhost variants", () => {
+    expect(isPrivateOrInternalHost("localhost")).toBe(true);
+    expect(isPrivateOrInternalHost("127.0.0.1")).toBe(true);
+    expect(isPrivateOrInternalHost("127.0.0.2")).toBe(true);
+    expect(isPrivateOrInternalHost("0.0.0.0")).toBe(true);
+    expect(isPrivateOrInternalHost("[::1]")).toBe(true);
+  });
+
+  test("blocks private IP ranges", () => {
+    // 10.0.0.0/8
+    expect(isPrivateOrInternalHost("10.0.0.1")).toBe(true);
+    expect(isPrivateOrInternalHost("10.255.255.255")).toBe(true);
+
+    // 172.16.0.0/12
+    expect(isPrivateOrInternalHost("172.16.0.1")).toBe(true);
+    expect(isPrivateOrInternalHost("172.31.255.255")).toBe(true);
+
+    // 192.168.0.0/16
+    expect(isPrivateOrInternalHost("192.168.0.1")).toBe(true);
+    expect(isPrivateOrInternalHost("192.168.255.255")).toBe(true);
+  });
+
+  test("blocks cloud metadata endpoints", () => {
+    expect(isPrivateOrInternalHost("169.254.169.254")).toBe(true);
+    expect(isPrivateOrInternalHost("metadata.google.internal")).toBe(true);
+    expect(isPrivateOrInternalHost("metadata.goog")).toBe(true);
+  });
+
+  test("blocks .local and .internal domains", () => {
+    expect(isPrivateOrInternalHost("myserver.local")).toBe(true);
+    expect(isPrivateOrInternalHost("api.internal")).toBe(true);
+  });
+
+  test("allows public domains", () => {
+    expect(isPrivateOrInternalHost("github.com")).toBe(false);
+    expect(isPrivateOrInternalHost("google.com")).toBe(false);
+    expect(isPrivateOrInternalHost("8.8.8.8")).toBe(false);
+    expect(isPrivateOrInternalHost("medium.com")).toBe(false);
+  });
+
+  test("allows public IPs outside private ranges", () => {
+    expect(isPrivateOrInternalHost("172.15.0.1")).toBe(false); // Just before 172.16
+    expect(isPrivateOrInternalHost("172.32.0.1")).toBe(false); // Just after 172.31
+    expect(isPrivateOrInternalHost("192.167.0.1")).toBe(false); // Just before 192.168
+  });
+});
+
+describe("fetchLinkContent SSRF protection", () => {
+  test("blocks private IP URLs", async () => {
+    const result = await fetchLinkContent("http://192.168.1.1/admin");
+    expect(result?.error).toBe("Blocked: private or internal host");
+  });
+
+  test("blocks localhost URLs", async () => {
+    const result = await fetchLinkContent("http://localhost:8080/api");
+    expect(result?.error).toBe("Blocked: private or internal host");
+  });
+
+  test("blocks metadata endpoint URLs", async () => {
+    const result = await fetchLinkContent("http://169.254.169.254/latest/meta-data");
+    expect(result?.error).toBe("Blocked: private or internal host");
   });
 });

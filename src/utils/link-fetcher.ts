@@ -36,6 +36,60 @@ const DEFAULT_OPTIONS: Required<LinkFetchOptions> = {
   ],
 };
 
+// Private IP ranges and cloud metadata endpoints to block (SSRF protection)
+const BLOCKED_HOSTS = [
+  // Cloud metadata endpoints
+  "169.254.169.254",
+  "metadata.google.internal",
+  "metadata.goog",
+  // Localhost variants
+  "localhost",
+  "127.0.0.1",
+  "0.0.0.0",
+  "[::1]",
+  // Link-local
+  "169.254.",
+];
+
+const PRIVATE_IP_PATTERNS = [
+  /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/, // 10.0.0.0/8
+  /^172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}$/, // 172.16.0.0/12
+  /^192\.168\.\d{1,3}\.\d{1,3}$/, // 192.168.0.0/16
+  /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/, // 127.0.0.0/8
+  /^0\.0\.0\.0$/, // 0.0.0.0
+  /^::1$/, // IPv6 localhost
+  /^fc00:/i, // IPv6 unique local
+  /^fe80:/i, // IPv6 link-local
+];
+
+/**
+ * Checks if a hostname points to a private/internal address (SSRF protection)
+ */
+export function isPrivateOrInternalHost(hostname: string): boolean {
+  const lowerHost = hostname.toLowerCase();
+
+  // Check blocked hosts list
+  for (const blocked of BLOCKED_HOSTS) {
+    if (lowerHost === blocked || lowerHost.startsWith(blocked)) {
+      return true;
+    }
+  }
+
+  // Check private IP patterns
+  for (const pattern of PRIVATE_IP_PATTERNS) {
+    if (pattern.test(hostname)) {
+      return true;
+    }
+  }
+
+  // Block any hostname ending with .local or .internal
+  if (lowerHost.endsWith(".local") || lowerHost.endsWith(".internal")) {
+    return true;
+  }
+
+  return false;
+}
+
 /**
  * Checks if a post is a link post (no self text, external URL)
  */
@@ -88,83 +142,110 @@ export function isDomainAllowed(
 }
 
 /**
- * Extracts main content from HTML
+ * Extracts main content from HTML with error handling
  * Simple extraction focused on article content
  */
 function extractMainContent(html: string): string {
-  // Remove scripts, styles, and other non-content elements
-  let content = html
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
-    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
-    .replace(/<nav\b[^<]*(?:(?!<\/nav>)<[^<]*)*<\/nav>/gi, "")
-    .replace(/<header\b[^<]*(?:(?!<\/header>)<[^<]*)*<\/header>/gi, "")
-    .replace(/<footer\b[^<]*(?:(?!<\/footer>)<[^<]*)*<\/footer>/gi, "")
-    .replace(/<!--[\s\S]*?-->/g, "");
-
-  // Try to find article or main content
-  const articleMatch = content.match(/<article[^>]*>([\s\S]*?)<\/article>/i);
-  const mainMatch = content.match(/<main[^>]*>([\s\S]*?)<\/main>/i);
-
-  if (articleMatch) {
-    content = articleMatch[1];
-  } else if (mainMatch) {
-    content = mainMatch[1];
+  if (!html || typeof html !== "string") {
+    return "";
   }
 
-  // Extract text from remaining HTML
-  content = content
-    .replace(/<[^>]+>/g, " ") // Remove HTML tags
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/\s+/g, " ") // Normalize whitespace
-    .trim();
+  try {
+    // Remove scripts, styles, and other non-content elements
+    let content = html
+      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+      .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
+      .replace(/<nav\b[^<]*(?:(?!<\/nav>)<[^<]*)*<\/nav>/gi, "")
+      .replace(/<header\b[^<]*(?:(?!<\/header>)<[^<]*)*<\/header>/gi, "")
+      .replace(/<footer\b[^<]*(?:(?!<\/footer>)<[^<]*)*<\/footer>/gi, "")
+      .replace(/<!--[\s\S]*?-->/g, "");
 
-  return content;
+    // Try to find article or main content
+    const articleMatch = content.match(/<article[^>]*>([\s\S]*?)<\/article>/i);
+    const mainMatch = content.match(/<main[^>]*>([\s\S]*?)<\/main>/i);
+
+    if (articleMatch) {
+      content = articleMatch[1];
+    } else if (mainMatch) {
+      content = mainMatch[1];
+    }
+
+    // Extract text from remaining HTML
+    content = content
+      .replace(/<[^>]+>/g, " ") // Remove HTML tags
+      .replace(/&nbsp;/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/\s+/g, " ") // Normalize whitespace
+      .trim();
+
+    return content;
+  } catch (error) {
+    console.warn("HTML extraction failed:", error);
+    return "";
+  }
 }
 
 /**
- * Extracts title from HTML
+ * Extracts title from HTML with error handling
  */
 function extractTitle(html: string): string {
-  const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-  if (titleMatch) {
-    return titleMatch[1].trim();
+  if (!html || typeof html !== "string") {
+    return "";
   }
 
-  const h1Match = html.match(/<h1[^>]*>([^<]+)<\/h1>/i);
-  if (h1Match) {
-    return h1Match[1].trim();
-  }
+  try {
+    const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+    if (titleMatch) {
+      return titleMatch[1].trim();
+    }
 
-  return "";
+    const h1Match = html.match(/<h1[^>]*>([^<]+)<\/h1>/i);
+    if (h1Match) {
+      return h1Match[1].trim();
+    }
+
+    return "";
+  } catch (error) {
+    console.warn("Title extraction failed:", error);
+    return "";
+  }
 }
 
 /**
- * Extracts GitHub repository content
+ * Extracts GitHub repository content with error handling
  */
 function extractGitHubContent(html: string): string {
-  // Try to find README content
-  const readmeMatch = html.match(
-    /<article[^>]*class="[^"]*markdown-body[^"]*"[^>]*>([\s\S]*?)<\/article>/i
-  );
-
-  if (readmeMatch) {
-    return extractMainContent(readmeMatch[1]);
+  if (!html || typeof html !== "string") {
+    return "";
   }
 
-  // Fallback to description
-  const descMatch = html.match(
-    /<p[^>]*class="[^"]*f4[^"]*"[^>]*>([^<]+)<\/p>/i
-  );
-  if (descMatch) {
-    return descMatch[1].trim();
-  }
+  try {
+    // Try to find README content
+    const readmeMatch = html.match(
+      /<article[^>]*class="[^"]*markdown-body[^"]*"[^>]*>([\s\S]*?)<\/article>/i
+    );
 
-  return extractMainContent(html);
+    if (readmeMatch) {
+      return extractMainContent(readmeMatch[1]);
+    }
+
+    // Fallback to description
+    const descMatch = html.match(
+      /<p[^>]*class="[^"]*f4[^"]*"[^>]*>([^<]+)<\/p>/i
+    );
+    if (descMatch) {
+      return descMatch[1].trim();
+    }
+
+    return extractMainContent(html);
+  } catch (error) {
+    console.warn("GitHub content extraction failed:", error);
+    return extractMainContent(html);
+  }
 }
 
 /**
@@ -186,10 +267,32 @@ export async function fetchLinkContent(
   options: LinkFetchOptions = {}
 ): Promise<LinkContent | null> {
   const opts = { ...DEFAULT_OPTIONS, ...options };
-  const domain = extractDomain(url);
+
+  // Parse URL to extract hostname for security checks
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(url);
+  } catch {
+    return null;
+  }
+
+  const hostname = parsedUrl.hostname;
+  const domain = hostname.replace(/^www\./, "");
 
   if (!domain) {
     return null;
+  }
+
+  // SSRF protection: block private/internal hosts
+  if (isPrivateOrInternalHost(hostname)) {
+    return {
+      title: "",
+      content: "",
+      domain,
+      fetchedAt: new Date(),
+      truncated: false,
+      error: "Blocked: private or internal host",
+    };
   }
 
   if (!isDomainAllowed(domain, opts)) {
