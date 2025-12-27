@@ -205,7 +205,8 @@ Focus on substantive patterns. Return empty arrays if no clear patterns emerge.`
     };
 
     const { data } = parseLLMJson(text, ThemeSynthesisSchema, fallback);
-    return data;
+    // Parse through schema to ensure defaults are applied and types match
+    return ThemeSynthesisSchema.parse(data);
   } catch (error) {
     console.error("Theme synthesis failed:", error);
     return {

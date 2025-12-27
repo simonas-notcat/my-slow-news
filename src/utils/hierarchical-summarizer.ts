@@ -137,7 +137,8 @@ Respond with just the synthesis text.`;
 
   try {
     const result = await agent.generate(prompt);
-    return typeof result === "string" ? result.trim() : result.text.trim();
+    const text = typeof result === "string" ? result : result.text;
+    return text.trim();
   } catch {
     return threadSummaries.map((t) => t.summary).join(" ");
   }

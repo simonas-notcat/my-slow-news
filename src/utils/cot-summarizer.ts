@@ -174,7 +174,8 @@ export async function cotSummarize(
       console.warn("COT summary parsing partially failed, using fallback");
     }
 
-    return data;
+    // Parse through schema to ensure defaults are applied and types match
+    return ControversySummarySchema.parse(data);
   } catch (error) {
     console.error("COT summarization failed:", error);
     return {

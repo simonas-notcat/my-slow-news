@@ -159,7 +159,7 @@ type ExtractClaimsContext = {
 
 /** Context for generate-digest step */
 type GenerateDigestContext = {
-  inputData?: DigestWithData;
+  inputData?: { summaries_with_claims: PostWithClaims[]; all_claims: WorkflowClaim[]; date: string };
   summaries_with_claims?: PostWithClaims[];
   all_claims?: WorkflowClaim[];
   date?: string;
@@ -453,12 +453,13 @@ Extract claims as RDF triples and analyze commenter stances. Return JSON.`;
         }
 
         // Normalize claims to ensure all fields have values (Zod defaults are applied during parsing)
-        const normalizedClaims = (extracted.claims || []).map((c: { subject: string; predicate: string; object: string; confidence?: number; source_stance?: string }) => ({
+        type SourceStance = "agrees" | "disagrees" | "neutral" | "uncertain";
+        const normalizedClaims = (extracted.claims || []).map((c: { subject: string; predicate: string; object: string; confidence?: number; source_stance?: SourceStance }) => ({
           subject: c.subject,
           predicate: c.predicate,
           object: c.object,
           confidence: c.confidence ?? 0.5,
-          source_stance: c.source_stance ?? "neutral" as const,
+          source_stance: c.source_stance ?? ("neutral" as SourceStance),
         }));
 
         summariesWithClaims.push({
