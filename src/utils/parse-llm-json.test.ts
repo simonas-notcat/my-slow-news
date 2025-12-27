@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
-import { parseLLMJson, SummaryResponseSchema, ExtractedClaimsSchema } from "./parse-llm-json";
+import { parseLLMJson, SummaryResponseSchema, ExtractedClaimsSchema, type ExtractedClaims } from "./parse-llm-json";
 
 describe("parseLLMJson", () => {
   const SimpleSchema = z.object({
@@ -169,9 +169,10 @@ describe("ExtractedClaimsSchema", () => {
     });
 
     expect(result.success).toBe(true);
-    expect(result.data.claims).toHaveLength(1);
-    expect(result.data.claims![0].subject).toBe("Rust");
-    expect(result.data.claims![0].confidence).toBe(0.9);
+    const data = result.data as ExtractedClaims;
+    expect(data.claims).toHaveLength(1);
+    expect(data.claims[0].subject).toBe("Rust");
+    expect(data.claims[0].confidence).toBe(0.9);
   });
 
   test("applies defaults for missing fields", () => {
@@ -183,7 +184,8 @@ describe("ExtractedClaimsSchema", () => {
     });
 
     expect(result.success).toBe(true);
-    expect(result.data.claims![0].confidence).toBe(0.5);
-    expect(result.data.claims![0].source_stance).toBe("neutral");
+    const data = result.data as ExtractedClaims;
+    expect(data.claims[0].confidence).toBe(0.5);
+    expect(data.claims[0].source_stance).toBe("neutral");
   });
 });

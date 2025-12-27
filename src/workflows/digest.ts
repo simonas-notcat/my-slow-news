@@ -21,6 +21,15 @@ import {
   getUsageStats,
   BudgetExceededError,
 } from "../utils/budget-tracker";
+import { selectDiverseComments } from "../utils/comment-selector";
+import { isLinkPost, fetchLinkContent, formatLinkContentForPrompt } from "../utils/link-fetcher";
+import { detectControversy } from "../utils/controversy-detector";
+import {
+  synthesizeThemes,
+  formatThemeSynthesisMarkdown,
+  shouldSynthesizeThemes,
+  type PostSummaryInput,
+} from "../utils/theme-synthesizer";
 
 // ============================================================================
 // Workflow Schemas - Proper type definitions for step inputs/outputs
@@ -78,6 +87,11 @@ const WorkflowSummarySchema = z.object({
   notable_comments: z.array(z.string()),
   sentiment: z.enum(["positive", "negative", "mixed", "neutral"]),
   key_topics: z.array(z.string()),
+  // Quality confidence scoring fields
+  confidence: z.number().min(0).max(1),
+  controversy_level: z.enum(["none", "low", "medium", "high"]),
+  information_density: z.enum(["sparse", "moderate", "rich"]),
+  missing_context: z.array(z.string()),
 });
 
 // Schema for claim - with required fields (defaults are applied during parsing)
@@ -106,6 +120,9 @@ const PostWithClaimsSchema = PostWithSummarySchema.extend({
     notable_camps: z.array(z.any()).optional(),
   }).optional(),
 });
+
+// Type alias for use in callbacks
+type PostWithClaims = z.infer<typeof PostWithClaimsSchema>;
 
 // Extended schema for passing data through to database step
 const DigestWithDataSchema = z.object({
@@ -170,6 +187,30 @@ const summarizeStep = createStep({
     for (const { subreddit, data } of posts) {
       const { post, comments } = data;
 
+      // Use diverse comment selection for better viewpoint representation
+      const selectedComments = selectDiverseComments(comments, 10);
+
+      // Detect controversy level for context
+      const controversyResult = detectControversy(post, comments);
+      const controversyHint = controversyResult.isControversial
+        ? `\n\nNote: This appears to be a controversial discussion (score: ${Math.round(controversyResult.score * 100)}%). Please ensure balanced representation of viewpoints.`
+        : "";
+
+      // Fetch link content for link posts
+      let linkContentText = "";
+      if (isLinkPost(post)) {
+        try {
+          const linkContent = await fetchLinkContent(post.url, { timeout: 5000 });
+          linkContentText = formatLinkContentForPrompt(linkContent, 1500);
+        } catch (e) {
+          linkContentText = "(Link post - external content could not be fetched)";
+        }
+      }
+
+      const contentSection = post.selftext
+        ? post.selftext
+        : linkContentText || "(Link post - no text content)";
+
       const prompt = `Summarize this Reddit post and its comments:
 
 Title: ${post.title}
@@ -178,15 +219,14 @@ Score: ${post.score} upvotes
 URL: ${post.permalink}
 
 Content:
-${post.selftext || "(Link post - no text content)"}
+${contentSection}
 
-Top Comments (${comments.length} total):
-${comments
-  .slice(0, 10)
-  .map((c: any) => `- u/${c.author} (${c.score} pts): ${c.body.slice(0, 300)}`)
-  .join("\n")}
+Comments (${comments.length} total, ${selectedComments.length} shown - selected for diversity):
+${selectedComments
+  .map((c: any) => `- u/${c.author} (${c.score} pts): ${c.body.slice(0, 500)}`)
+  .join("\n")}${controversyHint}
 
-Provide a JSON response with summary, notable_comments, sentiment, and key_topics.`;
+Return a JSON response with: summary, notable_comments, sentiment, key_topics, confidence (0-1), controversy_level (none/low/medium/high), information_density (sparse/moderate/rich), and missing_context (array of strings).`;
 
       try {
         // Check budget before making LLM call
@@ -220,6 +260,10 @@ Provide a JSON response with summary, notable_comments, sentiment, and key_topic
           notable_comments: [],
           sentiment: "neutral",
           key_topics: [],
+          confidence: 0.5,
+          controversy_level: "none",
+          information_density: "moderate",
+          missing_context: [],
         };
 
         const { data: summary, success, error } = parseLLMJson(
@@ -238,6 +282,10 @@ Provide a JSON response with summary, notable_comments, sentiment, and key_topic
           notable_comments: summary.notable_comments ?? [],
           sentiment: summary.sentiment ?? "neutral" as const,
           key_topics: summary.key_topics ?? [],
+          confidence: summary.confidence ?? 0.7,
+          controversy_level: summary.controversy_level ?? "none" as const,
+          information_density: summary.information_density ?? "moderate" as const,
+          missing_context: summary.missing_context ?? [],
         };
 
         summaries.push({
@@ -261,6 +309,10 @@ Provide a JSON response with summary, notable_comments, sentiment, and key_topic
             notable_comments: [],
             sentiment: "neutral" as const,
             key_topics: [],
+            confidence: 0,
+            controversy_level: "none" as const,
+            information_density: "sparse" as const,
+            missing_context: ["summarization failed"],
           },
         });
       }
@@ -423,6 +475,32 @@ const generateDigestStep = createStep({
     // Generate markdown
     let markdown = `# My Slow News - ${date}\n\n`;
     markdown += `*Generated at ${new Date().toISOString()}*\n\n`;
+
+    // Theme synthesis across posts (if enough posts)
+    if (shouldSynthesizeThemes(summaries_with_claims.length)) {
+      try {
+        const agent = getSummarizerAgent();
+        const postInputs: PostSummaryInput[] = summaries_with_claims.map((item: PostWithClaims) => ({
+          subreddit: item.subreddit,
+          title: item.post.title,
+          summary: item.summary.summary,
+          sentiment: item.summary.sentiment,
+          key_topics: item.summary.key_topics,
+          controversy_level: item.summary.controversy_level,
+        }));
+
+        console.log("Synthesizing themes across posts...");
+        const themes = await synthesizeThemes(agent, postInputs);
+        const themesMarkdown = formatThemeSynthesisMarkdown(themes);
+
+        if (themesMarkdown.trim()) {
+          markdown += themesMarkdown + "\n";
+        }
+      } catch (e) {
+        console.warn("Theme synthesis failed, skipping:", e);
+      }
+    }
+
     markdown += `---\n\n`;
 
     for (const [subreddit, items] of bySubreddit) {
@@ -432,8 +510,21 @@ const generateDigestStep = createStep({
         const { post, summary, claims } = item;
 
         markdown += `### [${post.title}](${post.permalink})\n\n`;
-        markdown += `**Author:** u/${post.author} | **Score:** ${post.score}\n\n`;
+
+        // Build metadata line with quality indicators
+        const confidencePct = Math.round((summary.confidence ?? 0.7) * 100);
+        const controversyBadge = summary.controversy_level !== "none"
+          ? ` | **Controversy:** ${summary.controversy_level}`
+          : "";
+        const densityIndicator = summary.information_density === "sparse" ? " ⚠️" : "";
+
+        markdown += `**Author:** u/${post.author} | **Score:** ${post.score} | **Confidence:** ${confidencePct}%${controversyBadge}${densityIndicator}\n\n`;
         markdown += `${summary.summary}\n\n`;
+
+        // Show missing context warnings
+        if (summary.missing_context && summary.missing_context.length > 0) {
+          markdown += `> **Note:** Missing context: ${summary.missing_context.join(", ")}\n\n`;
+        }
 
         if (summary.notable_comments?.length > 0) {
           markdown += `**Notable Comments:**\n`;
