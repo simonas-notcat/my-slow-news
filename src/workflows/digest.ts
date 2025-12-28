@@ -882,27 +882,36 @@ const saveToDatabaseStep = createStep({
 
       // Initialize deduplication service if enabled
       if (deduplicationEnabled) {
-        try {
-          const embeddingConfig: EmbeddingConfig = {
-            provider: config.embeddings?.provider ?? "openai",
-            model: config.embeddings?.model ?? "text-embedding-3-small",
-            dimensions: config.embeddings?.dimensions ?? 1536,
-            cacheEnabled: config.embeddings?.cache_enabled ?? true,
-            batchSize: config.embeddings?.batch_size ?? 100,
-          };
-          const embeddingService = getEmbeddingService(embeddingConfig);
-          deduplicationService = new ClaimDeduplicationService(
-            db,
-            embeddingService,
-            {
-              duplicateThreshold: config.semantic?.deduplication?.similarity_threshold ?? 0.92,
-              relatedThreshold: config.semantic?.deduplication?.related_threshold ?? 0.75,
-            }
-          );
-          console.log("  Semantic deduplication enabled");
-        } catch (error) {
-          console.warn("  Failed to initialize deduplication service:", error);
-          console.log("  Falling back to simple claim storage");
+        const provider = config.embeddings?.provider ?? "openai";
+
+        // Validate environment variables for embedding provider
+        if (provider === "openai" && !process.env.OPENAI_API_KEY) {
+          console.warn("  OPENAI_API_KEY not set, skipping semantic deduplication");
+          console.log("  Set OPENAI_API_KEY in .env or use ollama provider");
+        } else {
+          try {
+            const embeddingConfig: EmbeddingConfig = {
+              provider,
+              model: config.embeddings?.model ?? "text-embedding-3-small",
+              dimensions: config.embeddings?.dimensions ?? 1536,
+              cacheEnabled: config.embeddings?.cache_enabled ?? true,
+              cacheSize: config.embeddings?.cache_size ?? 10000,
+              batchSize: config.embeddings?.batch_size ?? 100,
+            };
+            const embeddingService = getEmbeddingService(embeddingConfig);
+            deduplicationService = new ClaimDeduplicationService(
+              db,
+              embeddingService,
+              {
+                duplicateThreshold: config.semantic?.deduplication?.similarity_threshold ?? 0.92,
+                relatedThreshold: config.semantic?.deduplication?.related_threshold ?? 0.75,
+              }
+            );
+            console.log("  Semantic deduplication enabled");
+          } catch (error) {
+            console.warn("  Failed to initialize deduplication service:", error);
+            console.log("  Falling back to simple claim storage");
+          }
         }
       }
 
