@@ -464,3 +464,145 @@ If claims load but stances fail:
 - Show claims without stance indicators
 - Display warning banner: "Stance data unavailable"
 - Disable stance recording buttons
+
+## Comprehensive Error Recovery Strategy
+
+### Error Categories and Handling
+
+| Category | Examples | Recovery Strategy |
+|----------|----------|-------------------|
+| **Connection** | Network timeout, DB unreachable | Auto-retry with backoff, show reconnect button |
+| **Query** | Invalid filter, syntax error | Show user-friendly message, offer filter reset |
+| **Write** | Stance save failed, constraint violation | Optimistic rollback, offer retry |
+| **Auth** | Token expired, permission denied | Re-authenticate, escalate to user |
+
+### Connection Recovery Flow
+
+```
+┌─────────────────┐
+│   Connected     │
+└────────┬────────┘
+         │ connection lost
+         ▼
+┌─────────────────┐
+│  Reconnecting   │──────────────────┐
+│  (attempt 1/3)  │                  │ success
+└────────┬────────┘                  ▼
+         │ fail               ┌─────────────────┐
+         ▼                    │   Connected     │
+┌─────────────────┐           │ (show toast)    │
+│  Reconnecting   │           └─────────────────┘
+│  (attempt 2/3)  │
+└────────┬────────┘
+         │ fail
+         ▼
+┌─────────────────┐
+│  Reconnecting   │
+│  (attempt 3/3)  │
+└────────┬────────┘
+         │ fail
+         ▼
+┌─────────────────┐
+│  Disconnected   │
+│ [r] Retry       │
+│ [q] Quit        │
+└─────────────────┘
+```
+
+### Error State Component
+
+```typescript
+interface ErrorBannerProps {
+  type: 'warning' | 'error';
+  message: string;
+  action?: {
+    label: string;
+    onPress: () => void;
+  };
+  dismissable?: boolean;
+}
+
+const ErrorBanner: FC<ErrorBannerProps> = ({ type, message, action, dismissable }) => {
+  const [dismissed, setDismissed] = useState(false);
+  if (dismissed) return null;
+
+  const color = type === 'error' ? 'red' : 'yellow';
+  const icon = type === 'error' ? '✗' : '⚠';
+
+  return (
+    <Box borderStyle="single" borderColor={color} paddingX={1}>
+      <Text color={color}>{icon} {message}</Text>
+      {action && (
+        <Text> [{action.label[0]}] {action.label}</Text>
+      )}
+      {dismissable && (
+        <Text dimColor> [Esc] Dismiss</Text>
+      )}
+    </Box>
+  );
+};
+```
+
+### Pending Operations Queue
+
+For offline-resilient stance recording:
+
+```typescript
+interface PendingOperation {
+  id: string;
+  type: 'save_stance' | 'remove_stance';
+  claimId: string;
+  data: { stance?: Stance; note?: string };
+  timestamp: Date;
+  retryCount: number;
+}
+
+class OperationQueue {
+  private queue: PendingOperation[] = [];
+  private isProcessing = false;
+
+  add(op: Omit<PendingOperation, 'id' | 'timestamp' | 'retryCount'>) {
+    this.queue.push({
+      ...op,
+      id: crypto.randomUUID(),
+      timestamp: new Date(),
+      retryCount: 0,
+    });
+    this.process();
+  }
+
+  async process() {
+    if (this.isProcessing || this.queue.length === 0) return;
+    this.isProcessing = true;
+
+    while (this.queue.length > 0) {
+      const op = this.queue[0];
+      try {
+        await this.execute(op);
+        this.queue.shift(); // Remove on success
+      } catch (error) {
+        op.retryCount++;
+        if (op.retryCount >= 3) {
+          this.queue.shift(); // Give up after 3 retries
+          this.onOperationFailed(op, error);
+        } else {
+          await sleep(1000 * op.retryCount); // Backoff
+        }
+      }
+    }
+
+    this.isProcessing = false;
+  }
+}
+```
+
+### User Feedback for Errors
+
+| Scenario | UI Feedback |
+|----------|-------------|
+| Save in progress | Show spinner next to stance buttons |
+| Save succeeded | Brief green toast "✓ Saved" |
+| Save failed, retrying | Yellow toast "Retrying..." |
+| Save failed permanently | Red inline error with retry button |
+| Connection lost | Header status changes to "Disconnected" |
+| Connection restored | Green toast "Reconnected", process queue |

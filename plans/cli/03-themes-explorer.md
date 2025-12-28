@@ -153,12 +153,17 @@ LIMIT 10;
 ### Predicate Drill-Down Query
 
 ```sql
+-- Get predicate metadata
+LET $pred_info = (SELECT description, is_builtin FROM predicate WHERE name = $predicate LIMIT 1);
+
+-- Get claims with user stance using proper subquery syntax
 SELECT
   id, subject, predicate, object, confidence, extracted_at,
-  (SELECT user_stance FROM claim_stances WHERE claim = $parent.id)[0].user_stance AS user_stance
+  (SELECT user_stance FROM claim_stances WHERE claim = $parent.id LIMIT 1).user_stance AS user_stance
 FROM claim
 WHERE predicate = $predicate AND extracted_at >= $cutoff
-ORDER BY extracted_at DESC;
+ORDER BY extracted_at DESC
+LIMIT 50;
 ```
 
 ### Subject Drill-Down Query
@@ -171,14 +176,18 @@ WHERE subject = $subject AND extracted_at >= $cutoff
 GROUP BY predicate
 ORDER BY count DESC;
 
--- All claims
+-- All claims with user stance
 SELECT
   id, subject, predicate, object, confidence, extracted_at,
-  (SELECT user_stance FROM claim_stances WHERE claim = $parent.id)[0].user_stance AS user_stance
+  (SELECT user_stance FROM claim_stances WHERE claim = $parent.id LIMIT 1).user_stance AS user_stance
 FROM claim
 WHERE subject = $subject AND extracted_at >= $cutoff
-ORDER BY extracted_at DESC;
+ORDER BY extracted_at DESC
+LIMIT 50;
 ```
+
+> **Note**: The subquery `(SELECT ... LIMIT 1).user_stance` returns null if no stance exists,
+> which the UI should display as "unrated".
 
 ## Component Hierarchy
 

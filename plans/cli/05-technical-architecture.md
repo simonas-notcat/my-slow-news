@@ -605,7 +605,7 @@ export function buildClaimsQuery(
       object,
       confidence,
       extracted_at,
-      (SELECT user_stance FROM claim_stances WHERE claim = $parent.id)[0].user_stance AS user_stance
+      (SELECT user_stance FROM claim_stances WHERE claim = $parent.id LIMIT 1).user_stance AS user_stance
     FROM claim
     ${whereClause}
     ORDER BY extracted_at DESC
@@ -647,14 +647,15 @@ export function buildCountQuery(filters: FilterState): QueryResult {
 function buildStanceCondition(stanceFilter: FilterState['stanceFilter']): string | null {
   switch (stanceFilter) {
     case 'unrated':
-      return '(SELECT count() FROM claim_stances WHERE claim = $parent.id AND user_stance != NONE)[0].count = 0';
+      // Check if no stance record exists OR user_stance is null/NONE
+      return 'array::len((SELECT id FROM claim_stances WHERE claim = $parent.id AND user_stance != NONE)) = 0';
     case 'rated':
-      return '(SELECT count() FROM claim_stances WHERE claim = $parent.id AND user_stance != NONE)[0].count > 0';
+      return 'array::len((SELECT id FROM claim_stances WHERE claim = $parent.id AND user_stance != NONE)) > 0';
     case 'agrees':
     case 'disagrees':
     case 'neutral':
     case 'uncertain':
-      return `(SELECT user_stance FROM claim_stances WHERE claim = $parent.id)[0].user_stance = '${stanceFilter}'`;
+      return `(SELECT user_stance FROM claim_stances WHERE claim = $parent.id LIMIT 1).user_stance = '${stanceFilter}'`;
     default:
       return null;
   }

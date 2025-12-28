@@ -83,6 +83,8 @@ interface ClaimListItem {
 ### Database Query
 
 ```sql
+-- Main query using LEFT JOIN pattern for stance lookup
+-- Note: SurrealDB doesn't support traditional LEFT JOIN, use subquery with array access
 SELECT
   id,
   subject,
@@ -90,13 +92,21 @@ SELECT
   object,
   confidence,
   extracted_at,
-  (SELECT user_stance FROM claim_stances WHERE claim = $parent.id)[0].user_stance AS user_stance
+  (SELECT user_stance FROM claim_stances WHERE claim = $parent.id LIMIT 1).user_stance AS user_stance
 FROM claim
 WHERE extracted_at >= $cutoff
 ORDER BY extracted_at DESC
 LIMIT $limit
-START $offset
+START $offset;
+
+-- Alternative using FETCH (if claim_stances has back-reference):
+-- SELECT *, <-claim_stances.user_stance AS user_stance FROM claim...
 ```
+
+> **Schema Requirement**: Add index on `extracted_at` for performance:
+> ```sql
+> DEFINE INDEX idx_claim_extracted_at ON claim FIELDS extracted_at;
+> ```
 
 ## Screen: Claim Detail
 
@@ -152,21 +162,57 @@ interface ClaimDetail {
   confidence: number;
   extracted_at: Date;
 
-  // Predicate info
+  // Predicate info (from predicate table)
   predicate_description?: string;
   predicate_is_builtin: boolean;
 
-  // Stance info
-  content_author_stance: string;
+  // Stance info (from claim_stances table)
+  content_author_stance?: StanceValue;  // 'agrees' | 'disagrees' | 'neutral' | 'uncertain' | 'not-stated'
   commenter_agree_pct: number;
   commenter_disagree_pct: number;
-  user_stance?: string;
+  user_stance?: UserStance;  // 'agrees' | 'disagrees' | 'neutral' | 'uncertain' (no 'not-stated' for user)
   user_note?: string;
 
-  // Source info (future)
+  // Source info (via makes_claim graph edge)
   source_post_title?: string;
   source_subreddit?: string;
 }
+
+// User can only set these values (not 'not-stated')
+type UserStance = 'agrees' | 'disagrees' | 'neutral' | 'uncertain';
+
+// System tracks 'not-stated' for content authors who didn't express a stance
+type StanceValue = UserStance | 'not-stated';
+```
+
+### Claim Detail Query
+
+```sql
+-- Fetch claim with related predicate info and stances using graph traversal
+LET $claim = (SELECT * FROM claim WHERE id = $claimId);
+
+-- Get predicate metadata
+LET $pred = (SELECT description, is_builtin FROM predicate WHERE name = $claim.predicate LIMIT 1);
+
+-- Get stance record
+LET $stances = (SELECT * FROM claim_stances WHERE claim = $claimId LIMIT 1);
+
+-- Get source post via makes_claim edge (graph traversal)
+LET $source = (SELECT <-makes_claim<-post.{title, subreddit} FROM $claimId LIMIT 1);
+
+-- Return combined result
+RETURN {
+  ...$claim[0],
+  predicate_description: $pred[0].description,
+  predicate_is_builtin: $pred[0].is_builtin ?? false,
+  content_author_stance: $stances[0].content_author_stance ?? 'not-stated',
+  commenter_agree_pct: $stances[0].commenter_agree_pct ?? 0,
+  commenter_disagree_pct: $stances[0].commenter_disagree_pct ?? 0,
+  user_stance: $stances[0].user_stance,
+  user_note: $stances[0].user_note,
+  source_post_title: $source[0].title,
+  source_subreddit: $source[0].subreddit
+};
 ```
 
 ## Screen: Filter Panel

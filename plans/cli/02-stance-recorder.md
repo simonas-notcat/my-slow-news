@@ -307,6 +307,9 @@ For a responsive feel, update UI immediately:
 
 ```typescript
 const handleStanceSelect = async (stance: Stance) => {
+  // Capture previous state for rollback
+  const previousStance = localStance;
+
   // Optimistic update
   setLocalStance(stance);
   setShowSaveIndicator(true);
@@ -323,6 +326,8 @@ const handleStanceSelect = async (stance: Stance) => {
   }
 };
 ```
+
+> **Note**: Always capture `previousStance` before updating to enable proper rollback on error.
 
 ## Future: Batch Rating Mode
 

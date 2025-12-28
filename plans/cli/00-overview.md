@@ -117,6 +117,142 @@ Implementation phases (no time estimates - user decides scheduling):
 
 ## Open Questions
 
-1. Should we support vim-style keybindings (j/k) in addition to arrow keys?
+1. ~~Should we support vim-style keybindings (j/k) in addition to arrow keys?~~ **Yes, both supported**
 2. How many claims to show per page? (Proposal: 10, configurable)
 3. Should filters persist across sessions?
+
+## Implementation Checklist
+
+### Phase 1: MVP - Claims Browser + Stance Recording
+
+#### Setup
+- [ ] Add Ink dependencies (`ink`, `ink-select-input`, `ink-text-input`, `ink-spinner`, `react`)
+- [ ] Add database index: `DEFINE INDEX idx_claim_extracted_at ON claim FIELDS extracted_at`
+- [ ] Create `src/cli/explorer/` directory structure
+
+#### Core Components
+- [ ] `App.tsx` - Root component with context providers
+- [ ] `DatabaseContext.tsx` - SurrealDB connection management
+- [ ] `AppContext.tsx` - Global state with useReducer
+- [ ] `Header.tsx` - Title + connection status indicator
+- [ ] `Footer.tsx` - Keyboard shortcuts hint
+
+#### Claims List Screen
+- [ ] `ClaimsListScreen.tsx` - Main list view container
+- [ ] `ClaimsList.tsx` - Scrollable claims list
+- [ ] `ClaimItem.tsx` - Single claim row with stance indicator
+- [ ] `FilterBar.tsx` - Current filter display
+- [ ] `Pagination.tsx` - Page navigation
+- [ ] `useListKeyboard.ts` - Arrow/vim navigation hook
+- [ ] `useClaims.ts` - Fetch claims with filters
+
+#### Claim Detail Screen
+- [ ] `ClaimDetailScreen.tsx` - Detail view container
+- [ ] `ClaimTriple.tsx` - Subject → Predicate → Object display
+- [ ] `ConfidenceBar.tsx` - Visual confidence meter
+- [ ] `CommunitySentiment.tsx` - Author + commenter stats
+- [ ] `StanceSection.tsx` - User stance display + actions
+
+#### Stance Recording
+- [ ] `QuickStancePopup.tsx` - Inline stance selector
+- [ ] `NoteInput.tsx` - Optional note text input
+- [ ] `SuccessToast.tsx` - Save confirmation feedback
+- [ ] `saveStance()` utility function
+- [ ] Optimistic update logic in reducer
+
+#### Filter Panel
+- [ ] `FilterPanel.tsx` - Modal filter editor
+- [ ] `PredicateSelect.tsx` - Predicate dropdown with counts
+- [ ] `SubjectInput.tsx` - Text input with debounce
+- [ ] `TimeRangeSelect.tsx` - 7/30/90/all days
+- [ ] `StanceFilterSelect.tsx` - All/Unrated/Rated/etc.
+
+#### Empty States & Errors
+- [ ] `EmptyState.tsx` - Configurable empty state component
+- [ ] `LoadingSpinner.tsx` - Loading indicator
+- [ ] `ErrorBanner.tsx` - Error display with retry
+- [ ] `HelpOverlay.tsx` - Keyboard shortcuts modal
+- [ ] Connection recovery with retry logic
+
+#### Testing
+- [ ] Unit tests for components using `ink-testing-library`
+- [ ] Integration tests for database hooks
+- [ ] Manual testing on macOS Terminal, iTerm2
+
+#### Migration
+- [ ] Update `package.json` scripts
+- [ ] Remove old `src/cli/query.ts`
+- [ ] Update CLAUDE.md with new command documentation
+
+### Phase 2: Theme Explorer (Future)
+- [ ] `ThemesScreen.tsx`
+- [ ] `ThemeColumn.tsx`
+- [ ] `PredicateDrillDown.tsx`
+- [ ] `SubjectDrillDown.tsx`
+
+### Phase 3: Advanced Features (Future)
+- [ ] Batch rating mode
+- [ ] Data export (JSON/CSV)
+- [ ] Fuzzy search
+
+## Migration Strategy
+
+### From Legacy Query Command
+
+The migration preserves CLI behavior while adding interactivity:
+
+| Old Command | New Behavior |
+|-------------|--------------|
+| `bun run query claims` | Opens explorer in claims list view |
+| `bun run query claims -s Rust` | Opens explorer with subject filter pre-applied |
+| `bun run query themes programming` | Opens explorer → themes view (Phase 2) |
+| `bun run query my-stances` | Opens explorer with stance filter = "rated" |
+
+### Backward Compatibility Options
+
+```typescript
+// src/cli/explorer/index.tsx
+program
+  .name('query')
+  .description('Interactive data explorer')
+  .option('-d, --days <days>', 'Initial time filter', '30')
+  .option('-s, --subject <subject>', 'Pre-filter by subject')
+  .option('-p, --predicate <predicate>', 'Pre-filter by predicate')
+  .option('--non-interactive', 'Output results and exit (legacy mode)')
+  .action(async (options) => {
+    if (options.nonInteractive) {
+      // Legacy mode: run query and exit
+      return legacyQueryMode(options);
+    }
+    // Interactive mode
+    render(<App config={config} initialFilters={options} />);
+  });
+```
+
+### Deprecation Timeline
+
+1. **Immediate**: New explorer is default for `bun run query`
+2. **v1.1**: Add deprecation warning when using `--non-interactive`
+3. **v2.0**: Remove `--non-interactive` flag entirely
+
+### CLAUDE.md Updates Required
+
+After implementation, update these sections in CLAUDE.md:
+
+```markdown
+## Development Commands
+
+# Replace query section with:
+# Interactive data explorer
+bun run query                    # Launch explorer
+bun run query -d 7              # Start with 7-day filter
+bun run query -s Rust           # Pre-filter by subject
+```
+
+### Rollback Plan
+
+If issues arise post-deployment:
+
+1. Keep `src/cli/query.ts` in repository (renamed to `query.legacy.ts`)
+2. Add `--legacy` flag to switch back: `bun run query --legacy claims`
+3. Monitor for user reports via GitHub issues
