@@ -11,6 +11,9 @@ Instead of consuming news in real-time, My Slow News creates thoughtful daily su
 - **Stance Tracking**: Record and track your opinions on claims over time
 - **Knowledge Graph**: Build a personal knowledge base stored in SurrealDB
 - **No Authentication**: Uses RSS feeds and web scraping - no Reddit API credentials needed
+- **Advanced Summarization**: Thread-aware hierarchical summarization, controversy detection, and cross-post theme synthesis
+- **Link Fetching**: Automatically fetches and summarizes external link content
+- **Budget Tracking**: Monitor and control daily LLM API usage costs
 
 ## ⚠️ Legal Disclaimer
 
@@ -217,6 +220,8 @@ sources:
     lookback_hours: 24
     min_relative_score: 1.0
     max_comments_per_post: 50
+    use_old_reddit: true     # Prefer old.reddit.com for scraping
+    scraping_delay_ms: 500   # Minimum delay between requests
 
 llm:
   provider: anthropic
@@ -231,6 +236,21 @@ database:
   url: ws://localhost:8000/rpc
   namespace: myslownews
   database: main
+
+# Advanced summarization features
+summarization:
+  hierarchical:
+    enabled: true            # Thread-aware summarization
+  controversy:
+    enabled: true            # Detect controversial topics
+    use_cot: true            # Chain-of-thought reasoning
+  theme_synthesis:
+    enabled: true            # Cross-post theme detection
+
+# Link fetching for external content
+link_fetching:
+  enabled: true
+  timeout_ms: 10000
 ```
 
 ## Project Structure
@@ -242,8 +262,17 @@ src/
 ├── config/           # Configuration loading
 ├── db/               # SurrealDB schema and connection
 ├── sources/
-│   └── reddit/       # Reddit RSS + scraping client
+│   ├── reddit/       # Reddit RSS + scraping client
+│   └── utils/        # Rate limiting, user agent rotation
 ├── types/            # TypeScript types
+├── utils/            # Shared utilities
+│   ├── budget-tracker.ts        # LLM usage tracking
+│   ├── comment-selector.ts      # Diverse comment selection
+│   ├── controversy-detector.ts  # Controversy scoring
+│   ├── cot-summarizer.ts        # Chain-of-thought summarization
+│   ├── hierarchical-summarizer.ts # Thread-aware summarization
+│   ├── link-fetcher.ts          # External link content fetching
+│   └── theme-synthesizer.ts     # Cross-post theme synthesis
 └── workflows/        # Mastra workflows
 
 digests/              # Generated markdown digests
@@ -262,10 +291,14 @@ config.yaml           # Main configuration
 ## How It Works
 
 1. **Fetch**: Scrapes Reddit via RSS feeds (no authentication needed)
-2. **Summarize**: Claude AI summarizes posts and notable comments
-3. **Extract**: Extracts factual claims as structured triples
-4. **Store**: Saves to SurrealDB graph database
-5. **Generate**: Creates markdown digest file
+2. **Fetch Links**: Optionally fetches and extracts content from external links
+3. **Select Comments**: Intelligently selects diverse comments (top-scored, controversial, contrarian)
+4. **Summarize**: Claude AI summarizes posts using hierarchical thread-aware summarization
+5. **Detect Controversy**: Identifies controversial topics using chain-of-thought reasoning
+6. **Synthesize Themes**: Discovers recurring themes across multiple posts
+7. **Extract Claims**: Extracts factual claims as structured RDF triples
+8. **Store**: Saves to SurrealDB graph database
+9. **Generate**: Creates markdown digest file
 
 ## Development
 
