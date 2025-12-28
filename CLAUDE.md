@@ -17,7 +17,7 @@ This file provides guidance for AI assistants working with this codebase.
 
 - **Runtime**: Bun (TypeScript)
 - **AI Framework**: Mastra (`@mastra/core`)
-- **LLM**: Anthropic Claude (claude-sonnet-4-20250514)
+- **LLM**: Anthropic Claude (anthropic/claude-sonnet-4-20250514)
 - **Database**: SurrealDB (graph database)
 - **CLI**: Commander.js
 - **Validation**: Zod
@@ -46,13 +46,28 @@ src/
 │   ├── schema.ts      # Table definitions
 │   └── init.ts        # Schema initialization
 ├── sources/
-│   └── reddit/        # Reddit scraper (RSS + web scraping)
-│       ├── index.ts       # High-level fetch functions
-│       ├── client.ts      # Main Reddit client
-│       ├── rss-fetcher.ts # RSS feed parser
-│       └── scraper.ts     # Web scraping logic
+│   ├── reddit/        # Reddit scraper (RSS + web scraping)
+│   │   ├── index.ts       # High-level fetch functions
+│   │   ├── client.ts      # Main Reddit client
+│   │   ├── rss-fetcher.ts # RSS feed parser
+│   │   └── scraper.ts     # Web scraping logic
+│   ├── utils/         # Source utilities
+│   │   ├── rate-limiter.ts    # Request rate limiting
+│   │   └── user-agent-pool.ts # User agent rotation
+│   └── types.ts       # Source-specific types
 ├── types/             # TypeScript type definitions
 │   └── index.ts       # All types and Zod schemas
+├── utils/             # Shared utilities
+│   ├── budget-tracker.ts        # LLM usage tracking
+│   ├── comment-selector.ts      # Diverse comment selection
+│   ├── controversy-detector.ts  # Controversy scoring
+│   ├── cot-summarizer.ts        # Chain-of-thought summarization
+│   ├── hierarchical-summarizer.ts # Thread-aware summarization
+│   ├── link-fetcher.ts          # External link content fetching
+│   ├── parse-llm-json.ts        # JSON extraction from LLM output
+│   ├── retry.ts                 # Retry with backoff utility
+│   ├── theme-synthesizer.ts     # Cross-post theme synthesis
+│   └── thread-builder.ts        # Comment thread reconstruction
 └── workflows/         # Mastra workflows
     └── digest.ts      # Multi-step digest generation
 ```
@@ -113,10 +128,12 @@ sources:
     lookback_hours: 24
     min_relative_score: 1.0  # Filter by average score multiplier
     max_comments_per_post: 50
+    use_old_reddit: true     # Prefer old.reddit.com for scraping
+    scraping_delay_ms: 500   # Minimum delay between requests
 
 llm:
   provider: anthropic
-  model: claude-sonnet-4-20250514
+  model: anthropic/claude-sonnet-4-20250514
   daily_budget_usd: 5.0
 
 output:
@@ -127,6 +144,33 @@ database:
   url: ws://localhost:8000/rpc
   namespace: myslownews
   database: main
+
+# Summarization feature flags
+summarization:
+  comment_selection:
+    top_scored_weight: 0.4
+    replied_to_weight: 0.2
+    controversial_weight: 0.2
+    contrarian_weight: 0.2
+  hierarchical:
+    enabled: true
+    min_comments_threshold: 20
+    max_threads: 5
+  controversy:
+    enabled: true
+    use_cot: true
+    threshold: 0.5
+  theme_synthesis:
+    enabled: true
+    min_posts: 3
+
+# Link fetching for external content
+link_fetching:
+  enabled: true
+  timeout_ms: 10000
+  max_content_length: 5000
+  allowed_domains: []
+  blocked_domains: [twitter.com, x.com, facebook.com, instagram.com, tiktok.com]
 ```
 
 ## Database Schema
@@ -281,12 +325,23 @@ describe("my tests", () => {
 
 | Module | Test File |
 |--------|-----------|
-| `src/utils/retry.ts` | `src/utils/retry.test.ts` |
-| `src/utils/budget-tracker.ts` | `src/utils/budget-tracker.test.ts` |
-| `src/utils/parse-llm-json.ts` | `src/utils/parse-llm-json.test.ts` |
 | `src/agents/tools/extract-claims.ts` | `src/agents/tools/extract-claims.test.ts` |
 | `src/config/index.ts` | `src/config/config.test.ts` |
+| `src/sources/reddit/client.ts` | `src/sources/reddit/client.test.ts` |
+| `src/sources/reddit/rss-fetcher.ts` | `src/sources/reddit/rss-fetcher.test.ts` |
+| `src/sources/reddit/scraper.ts` | `src/sources/reddit/scraper.test.ts` |
+| `src/sources/utils/rate-limiter.ts` | `src/sources/utils/rate-limiter.test.ts` |
 | `src/types/index.ts` | `src/types/types.test.ts` |
+| `src/utils/budget-tracker.ts` | `src/utils/budget-tracker.test.ts` |
+| `src/utils/comment-selector.ts` | `src/utils/comment-selector.test.ts` |
+| `src/utils/controversy-detector.ts` | `src/utils/controversy-detector.test.ts` |
+| `src/utils/cot-summarizer.ts` | `src/utils/cot-summarizer.test.ts` |
+| `src/utils/hierarchical-summarizer.ts` | `src/utils/hierarchical-summarizer.test.ts` |
+| `src/utils/link-fetcher.ts` | `src/utils/link-fetcher.test.ts` |
+| `src/utils/parse-llm-json.ts` | `src/utils/parse-llm-json.test.ts` |
+| `src/utils/retry.ts` | `src/utils/retry.test.ts` |
+| `src/utils/theme-synthesizer.ts` | `src/utils/theme-synthesizer.test.ts` |
+| `src/utils/thread-builder.ts` | `src/utils/thread-builder.test.ts` |
 
 ## Common Tasks
 
