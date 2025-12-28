@@ -29,8 +29,8 @@ describe("decodeHtmlEntities", () => {
     expect(decodeHtmlEntities("&#38;")).toBe("&");
     expect(decodeHtmlEntities("&#60;")).toBe("<");
     expect(decodeHtmlEntities("&#62;")).toBe(">");
-    expect(decodeHtmlEntities("&#8217;")).toBe("'"); // Right single quote
-    expect(decodeHtmlEntities("&#8220;")).toBe("\u201C"); // Left double quote
+    expect(decodeHtmlEntities("&#8217;")).toBe("\u2019"); // Right single quote (U+2019)
+    expect(decodeHtmlEntities("&#8220;")).toBe("\u201C"); // Left double quote (U+201C)
   });
 
   test("decodes hex entities", () => {
@@ -38,7 +38,7 @@ describe("decodeHtmlEntities", () => {
     expect(decodeHtmlEntities("&#x3C;")).toBe("<");
     expect(decodeHtmlEntities("&#x3E;")).toBe(">");
     expect(decodeHtmlEntities("&#X3E;")).toBe(">"); // uppercase X
-    expect(decodeHtmlEntities("&#x2019;")).toBe("'"); // Right single quote
+    expect(decodeHtmlEntities("&#x2019;")).toBe("\u2019"); // Right single quote (U+2019)
   });
 
   test("handles mixed entities", () => {
@@ -294,7 +294,7 @@ describe("findMainContent", () => {
       <html><body>
         <header>Header</header>
         <main>
-          <p>This is the main content area with enough text to be considered meaningful content for extraction.</p>
+          <p>This is the main content area with enough text to be considered meaningful content for extraction. Adding more text to exceed the threshold.</p>
         </main>
       </body></html>
     `);
