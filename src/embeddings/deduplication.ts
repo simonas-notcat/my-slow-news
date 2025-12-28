@@ -307,13 +307,10 @@ export class ClaimDeduplicationService {
   }
 
   /**
-   * Detect duplicates among existing claims (for retroactive deduplication).
+   * Detect duplicates among existing claims using vector similarity search.
    *
-   * WARNING: This method has O(n²) time complexity where n = number of claims.
-   * For large datasets (>1000 claims), consider:
-   * - Using vector index queries instead of pairwise comparison
-   * - Processing in batches with progress reporting
-   * - Running as a background job
+   * Uses SurrealDB's vector index for O(n) performance instead of O(n²) pairwise
+   * comparison. For each claim, queries the vector index for similar claims.
    *
    * @param options.maxClaims - Limit claims to process (default: 1000)
    * @param options.onProgress - Progress callback
@@ -339,6 +336,9 @@ export class ClaimDeduplicationService {
       similarity: number;
     }> = [];
 
+    // Track pairs we've already found to avoid duplicates (a,b) and (b,a)
+    const seenPairs = new Set<string>();
+
     // Get all canonical claims with embeddings
     const [allClaims] = await this.db.query<[ClaimRecord[]]>(
       `
@@ -351,47 +351,44 @@ export class ClaimDeduplicationService {
 
     const truncated = allClaims.length > maxClaims;
     const claims = allClaims.slice(0, maxClaims);
+    const total = claims.length;
 
-    if (claims.length > 500) {
-      console.warn(
-        `Warning: Comparing ${claims.length} claims pairwise ` +
-          `(${(claims.length * (claims.length - 1)) / 2} comparisons). ` +
-          `This may take a while. Consider using --max-claims to limit.`,
-      );
-    }
-
-    const totalPairs = (claims.length * (claims.length - 1)) / 2;
-    let checkedPairs = 0;
-
-    // Compare each pair (O(n²))
+    // Use vector similarity search for each claim (O(n) with vector index)
     for (let i = 0; i < claims.length; i++) {
-      for (let j = i + 1; j < claims.length; j++) {
-        const claim1 = claims[i];
-        const claim2 = claims[j];
+      const claim = claims[i];
 
-        if (!claim1.embedding || !claim2.embedding) {
-          continue;
-        }
+      if (!claim.embedding || !claim.id) {
+        continue;
+      }
 
-        const similarity = cosineSimilarity(claim1.embedding, claim2.embedding);
+      // Find similar claims using vector index
+      const similar = await findSimilarClaims(this.db, claim.embedding, {
+        limit: 10,
+        minSimilarity: this.config.duplicateThreshold,
+        excludeIds: [claim.id as string],
+        canonicalOnly: true,
+      });
 
-        if (similarity >= this.config.duplicateThreshold) {
+      // Add unique duplicate pairs
+      for (const match of similar) {
+        if (!match.claim.id) continue;
+
+        // Create canonical pair key (smaller id first)
+        const ids = [claim.id as string, match.claim.id as string].sort();
+        const pairKey = `${ids[0]}:${ids[1]}`;
+
+        if (!seenPairs.has(pairKey)) {
+          seenPairs.add(pairKey);
           duplicatePairs.push({
-            claim1,
-            claim2,
-            similarity,
+            claim1: claim,
+            claim2: match.claim,
+            similarity: match.similarity,
           });
         }
-
-        checkedPairs++;
-        if (onProgress && checkedPairs % 1000 === 0) {
-          onProgress(checkedPairs, totalPairs);
-        }
       }
-    }
 
-    // Final progress update
-    onProgress?.(totalPairs, totalPairs);
+      onProgress?.(i + 1, total);
+    }
 
     return { duplicatePairs, truncated };
   }
@@ -440,22 +437,30 @@ export class ClaimDeduplicationService {
   }
 
   /**
+   * Result of a merge operation
+   */
+  /**
    * Merge a duplicate claim into a canonical one.
    *
    * This:
    * 1. Updates the duplicate's canonical_claim field
    * 2. Creates a similarity relation
-   * 3. Optionally merges stance data
+   * 3. Optionally merges stance data (skipping conflicts)
    *
    * @param duplicateId - ID of the claim to mark as duplicate
    * @param canonicalId - ID of the canonical claim
    * @param mergeStances - Whether to merge stance data (default: true)
+   * @returns Merge result with conflict information
    */
   async mergeDuplicate(
     duplicateId: string,
     canonicalId: string,
     mergeStances = true,
-  ): Promise<void> {
+  ): Promise<{
+    merged: boolean;
+    stancesMoved: number;
+    stanceConflicts: number;
+  }> {
     // Get both claims
     const [claims] = await this.db.query<[ClaimRecord[]]>(
       `SELECT * FROM claim WHERE id IN [$duplicate, $canonical]`,
@@ -510,18 +515,56 @@ export class ClaimDeduplicationService {
       },
     );
 
+    let stancesMoved = 0;
+    let stanceConflicts = 0;
+
     if (mergeStances) {
-      // Move stances from duplicate to canonical claim
-      await this.db.query(
+      // Find stances on duplicate claim that would conflict with canonical
+      // A conflict occurs when the same user has stances on both claims
+      const [conflictingStances] = await this.db.query<
+        [Array<{ id: string }>]
+      >(
         `
-        UPDATE claim_stances SET claim = $canonical
+        SELECT id FROM claim_stances
         WHERE claim = $duplicate
+          AND user_stance IS NOT NONE
+          AND (SELECT id FROM claim_stances
+               WHERE claim = $canonical
+                 AND user_stance IS NOT NONE) CONTAINS id
         `,
         {
           duplicate: duplicateId,
           canonical: canonicalId,
         },
       );
+
+      stanceConflicts = conflictingStances.length;
+
+      // Move only non-conflicting stances from duplicate to canonical
+      // Stances without user_stance (only community data) are always moved
+      const [movedResult] = await this.db.query<[Array<{ count: number }>]>(
+        `
+        UPDATE claim_stances SET claim = $canonical
+        WHERE claim = $duplicate
+          AND (user_stance IS NONE
+               OR id NOT IN (SELECT id FROM claim_stances
+                             WHERE claim = $canonical
+                               AND user_stance IS NOT NONE))
+        RETURN { count: count() }
+        `,
+        {
+          duplicate: duplicateId,
+          canonical: canonicalId,
+        },
+      );
+
+      stancesMoved = movedResult[0]?.count ?? 0;
     }
+
+    return {
+      merged: true,
+      stancesMoved,
+      stanceConflicts,
+    };
   }
 }

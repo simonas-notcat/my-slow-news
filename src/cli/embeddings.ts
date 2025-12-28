@@ -53,6 +53,28 @@ function toDeduplicationConfig(config: {
   };
 }
 
+/**
+ * Validate environment variables for the configured embedding provider.
+ * Called early to fail fast with clear error messages.
+ */
+function validateEnvironment(provider: "openai" | "ollama"): void {
+  if (provider === "openai") {
+    if (!process.env.OPENAI_API_KEY) {
+      console.error("Error: OPENAI_API_KEY environment variable is required.");
+      console.error("");
+      console.error("Options:");
+      console.error("  1. Set OPENAI_API_KEY in your .env file");
+      console.error("  2. Export it: export OPENAI_API_KEY=sk-...");
+      console.error("  3. Use Ollama instead: set embeddings.provider to 'ollama' in config.yaml");
+      process.exit(1);
+    }
+  } else if (provider === "ollama") {
+    const baseUrl = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
+    console.log(`Note: Using Ollama at ${baseUrl}`);
+    console.log("Make sure Ollama is running with a text embedding model.\n");
+  }
+}
+
 program
   .name("embeddings")
   .description("Manage claim embeddings for semantic features");
@@ -64,10 +86,14 @@ program
   .option("-v, --verbose", "Show detailed progress")
   .action(async (options: { batchSize: string; verbose?: boolean }) => {
     const config = loadConfig();
+    const embeddingConfig = toEmbeddingConfig(config.embeddings);
+
+    // Validate environment early before connecting to DB
+    validateEnvironment(embeddingConfig.provider);
+
     const db = await getDb(config);
 
     try {
-      const embeddingConfig = toEmbeddingConfig(config.embeddings);
       const deduplicationConfig = toDeduplicationConfig(
         config.semantic.deduplication,
       );
@@ -126,10 +152,14 @@ program
   .option("-v, --verbose", "Show detailed progress")
   .action(async (options: { maxClaims: string; verbose?: boolean }) => {
     const config = loadConfig();
+    const embeddingConfig = toEmbeddingConfig(config.embeddings);
+
+    // Validate environment early before connecting to DB
+    validateEnvironment(embeddingConfig.provider);
+
     const db = await getDb(config);
 
     try {
-      const embeddingConfig = toEmbeddingConfig(config.embeddings);
       const deduplicationConfig = toDeduplicationConfig(
         config.semantic.deduplication,
       );
@@ -264,10 +294,14 @@ program
       options: { stances: boolean },
     ) => {
       const config = loadConfig();
+      const embeddingConfig = toEmbeddingConfig(config.embeddings);
+
+      // Validate environment early (needed for similarity calculation)
+      validateEnvironment(embeddingConfig.provider);
+
       const db = await getDb(config);
 
       try {
-        const embeddingConfig = toEmbeddingConfig(config.embeddings);
         const deduplicationConfig = toDeduplicationConfig(
           config.semantic.deduplication,
         );
@@ -285,9 +319,24 @@ program
         console.log(`  Merge stances: ${options.stances ? "yes" : "no"}`);
         console.log();
 
-        await deduper.mergeDuplicate(duplicateId, canonicalId, options.stances);
+        const result = await deduper.mergeDuplicate(
+          duplicateId,
+          canonicalId,
+          options.stances,
+        );
 
         console.log("Merge complete.");
+        if (options.stances) {
+          console.log(`  Stances moved: ${result.stancesMoved}`);
+          if (result.stanceConflicts > 0) {
+            console.log(
+              `  Stance conflicts (skipped): ${result.stanceConflicts}`,
+            );
+            console.log(
+              "\n  Note: Conflicting stances were preserved on both claims.",
+            );
+          }
+        }
       } catch (error) {
         console.error("Error merging claims:", error);
         process.exit(1);

@@ -324,8 +324,8 @@ describe("ClaimDeduplicationService", () => {
   });
 
   describe("detectExistingDuplicates", () => {
-    test("finds duplicate pairs above threshold", async () => {
-      // Two very similar claims and one different
+    test("finds duplicate pairs using vector similarity search", async () => {
+      // Claims with embeddings
       const claims: ClaimRecord[] = [
         {
           id: "claim:1",
@@ -344,22 +344,25 @@ describe("ClaimDeduplicationService", () => {
           object: "C++",
           confidence: 0.85,
           extracted_at: new Date(),
-          embedding: [0.99, 0.1, 0, 0], // Very similar to claim:1
-          is_canonical: true,
-        },
-        {
-          id: "claim:3",
-          subject: "Python",
-          predicate: "is-slower-than",
-          object: "C",
-          confidence: 0.8,
-          extracted_at: new Date(),
-          embedding: [0, 0, 1, 0], // Different
+          embedding: [0.99, 0.1, 0, 0],
           is_canonical: true,
         },
       ];
 
-      mockQuery.mockImplementationOnce(() => Promise.resolve([claims]));
+      // Mock: SELECT claims, then findSimilarClaims for each
+      mockQuery
+        .mockImplementationOnce(() => Promise.resolve([claims])) // SELECT all claims
+        .mockImplementationOnce(() =>
+          Promise.resolve([
+            [
+              {
+                ...claims[1],
+                similarity: 0.995, // Similar to claim:1
+              },
+            ],
+          ]),
+        ) // findSimilarClaims for claim:1
+        .mockImplementationOnce(() => Promise.resolve([[]])); // findSimilarClaims for claim:2 (already found)
 
       const service = new ClaimDeduplicationService(
         mockDb,
@@ -371,15 +374,11 @@ describe("ClaimDeduplicationService", () => {
         await service.detectExistingDuplicates();
 
       expect(truncated).toBe(false);
-      // claim:1 and claim:2 should be detected as duplicates (similarity ~0.995)
       expect(duplicatePairs.length).toBe(1);
-      expect(duplicatePairs[0].claim1.id).toBe("claim:1");
-      expect(duplicatePairs[0].claim2.id).toBe("claim:2");
       expect(duplicatePairs[0].similarity).toBeGreaterThan(0.92);
     });
 
     test("returns empty when no duplicates exist", async () => {
-      // Claims with orthogonal embeddings
       const claims: ClaimRecord[] = [
         {
           id: "claim:1",
@@ -391,19 +390,12 @@ describe("ClaimDeduplicationService", () => {
           embedding: [1, 0, 0, 0],
           is_canonical: true,
         },
-        {
-          id: "claim:2",
-          subject: "C",
-          predicate: "has",
-          object: "D",
-          confidence: 0.9,
-          extracted_at: new Date(),
-          embedding: [0, 1, 0, 0],
-          is_canonical: true,
-        },
       ];
 
-      mockQuery.mockImplementationOnce(() => Promise.resolve([claims]));
+      // Mock: SELECT claims, then no similar claims found
+      mockQuery
+        .mockImplementationOnce(() => Promise.resolve([claims]))
+        .mockImplementationOnce(() => Promise.resolve([[]]));
 
       const service = new ClaimDeduplicationService(
         mockDb,
@@ -431,7 +423,10 @@ describe("ClaimDeduplicationService", () => {
           is_canonical: true,
         }));
 
-      mockQuery.mockImplementationOnce(() => Promise.resolve([claims]));
+      // Mock: SELECT returns 101 claims (one more than limit)
+      mockQuery
+        .mockImplementationOnce(() => Promise.resolve([claims]))
+        .mockImplementation(() => Promise.resolve([[]])); // No duplicates found
 
       const service = new ClaimDeduplicationService(
         mockDb,
@@ -455,16 +450,6 @@ describe("ClaimDeduplicationService", () => {
           object: "B",
           confidence: 0.9,
           extracted_at: new Date(),
-          embedding: [1, 0, 0, 0],
-          is_canonical: true,
-        },
-        {
-          id: "claim:2",
-          subject: "C",
-          predicate: "has",
-          object: "D",
-          confidence: 0.9,
-          extracted_at: new Date(),
           // No embedding
           is_canonical: true,
         },
@@ -480,8 +465,58 @@ describe("ClaimDeduplicationService", () => {
 
       const { duplicatePairs } = await service.detectExistingDuplicates();
 
-      // Should not crash and should return empty (no valid pairs)
+      // Should not crash and should return empty
       expect(duplicatePairs).toHaveLength(0);
+    });
+
+    test("avoids duplicate pairs (a,b) and (b,a)", async () => {
+      const claims: ClaimRecord[] = [
+        {
+          id: "claim:1",
+          subject: "A",
+          predicate: "has",
+          object: "B",
+          confidence: 0.9,
+          extracted_at: new Date(),
+          embedding: [1, 0, 0, 0],
+          is_canonical: true,
+        },
+        {
+          id: "claim:2",
+          subject: "A",
+          predicate: "has",
+          object: "B",
+          confidence: 0.9,
+          extracted_at: new Date(),
+          embedding: [1, 0, 0, 0],
+          is_canonical: true,
+        },
+      ];
+
+      // Mock: Both claims find each other as duplicates
+      mockQuery
+        .mockImplementationOnce(() => Promise.resolve([claims]))
+        .mockImplementationOnce(() =>
+          Promise.resolve([
+            [{ ...claims[1], similarity: 1.0 }],
+          ]),
+        ) // claim:1 finds claim:2
+        .mockImplementationOnce(() =>
+          Promise.resolve([
+            [{ ...claims[0], similarity: 1.0 }],
+          ]),
+        ); // claim:2 finds claim:1
+
+      const service = new ClaimDeduplicationService(
+        mockDb,
+        mockEmbeddingService,
+        config,
+      );
+
+      const { duplicatePairs } = await service.detectExistingDuplicates();
+
+      // Should only have one pair, not two
+      expect(duplicatePairs).toHaveLength(1);
     });
   });
 
@@ -533,7 +568,7 @@ describe("ClaimDeduplicationService", () => {
   });
 
   describe("mergeDuplicate", () => {
-    test("merges duplicate into canonical claim", async () => {
+    test("merges duplicate into canonical claim and returns result", async () => {
       const duplicateClaim: ClaimRecord = {
         id: "claim:dup",
         subject: "A",
@@ -562,7 +597,10 @@ describe("ClaimDeduplicationService", () => {
         ) // SELECT both claims
         .mockImplementationOnce(() => Promise.resolve([[]])) // UPDATE duplicate
         .mockImplementationOnce(() => Promise.resolve([[]])) // RELATE
-        .mockImplementationOnce(() => Promise.resolve([[]])); // UPDATE stances
+        .mockImplementationOnce(() => Promise.resolve([[]])) // SELECT conflicting stances
+        .mockImplementationOnce(() =>
+          Promise.resolve([[{ count: 2 }]]),
+        ); // UPDATE stances (moved 2)
 
       const service = new ClaimDeduplicationService(
         mockDb,
@@ -570,7 +608,14 @@ describe("ClaimDeduplicationService", () => {
         config,
       );
 
-      await service.mergeDuplicate("claim:dup", "claim:canonical");
+      const result = await service.mergeDuplicate(
+        "claim:dup",
+        "claim:canonical",
+      );
+
+      expect(result.merged).toBe(true);
+      expect(result.stancesMoved).toBe(2);
+      expect(result.stanceConflicts).toBe(0);
 
       // Verify UPDATE was called to mark as non-canonical
       const updateCall = mockQuery.mock.calls[1];
@@ -631,10 +676,70 @@ describe("ClaimDeduplicationService", () => {
         config,
       );
 
-      await service.mergeDuplicate("claim:dup", "claim:canonical", false);
+      const result = await service.mergeDuplicate(
+        "claim:dup",
+        "claim:canonical",
+        false,
+      );
 
-      // Should only have 3 calls (SELECT, UPDATE, RELATE) - no stance update
+      expect(result.merged).toBe(true);
+      expect(result.stancesMoved).toBe(0);
+      expect(result.stanceConflicts).toBe(0);
+
+      // Should only have 3 calls (SELECT, UPDATE, RELATE) - no stance queries
       expect(mockQuery).toHaveBeenCalledTimes(3);
+    });
+
+    test("reports stance conflicts when user has stances on both claims", async () => {
+      const duplicateClaim: ClaimRecord = {
+        id: "claim:dup",
+        subject: "A",
+        predicate: "has",
+        object: "B",
+        confidence: 0.8,
+        extracted_at: new Date(),
+        embedding: [0.1, 0.2, 0.3, 0.4],
+        is_canonical: true,
+      };
+
+      const canonicalClaim: ClaimRecord = {
+        id: "claim:canonical",
+        subject: "A",
+        predicate: "has",
+        object: "B",
+        confidence: 0.9,
+        extracted_at: new Date(),
+        embedding: [0.1, 0.2, 0.3, 0.4],
+        is_canonical: true,
+      };
+
+      mockQuery
+        .mockImplementationOnce(() =>
+          Promise.resolve([[duplicateClaim, canonicalClaim]]),
+        ) // SELECT both claims
+        .mockImplementationOnce(() => Promise.resolve([[]])) // UPDATE duplicate
+        .mockImplementationOnce(() => Promise.resolve([[]])) // RELATE
+        .mockImplementationOnce(() =>
+          Promise.resolve([[{ id: "stance:1" }, { id: "stance:2" }]]),
+        ) // SELECT conflicting stances (2 conflicts)
+        .mockImplementationOnce(() =>
+          Promise.resolve([[{ count: 1 }]]),
+        ); // UPDATE stances (moved 1)
+
+      const service = new ClaimDeduplicationService(
+        mockDb,
+        mockEmbeddingService,
+        config,
+      );
+
+      const result = await service.mergeDuplicate(
+        "claim:dup",
+        "claim:canonical",
+      );
+
+      expect(result.merged).toBe(true);
+      expect(result.stancesMoved).toBe(1);
+      expect(result.stanceConflicts).toBe(2);
     });
   });
 });
