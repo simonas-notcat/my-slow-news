@@ -121,6 +121,13 @@ export interface ClaimRecord {
   object: string;
   confidence: number;
   extracted_at: Date;
+  // Embedding fields for semantic features
+  embedding?: number[];
+  embedding_model?: string;
+  embedded_at?: Date;
+  // Deduplication fields
+  canonical_claim?: string; // record<claim>
+  is_canonical?: boolean;
 }
 
 export interface ClaimStancesRecord {
@@ -132,6 +139,15 @@ export interface ClaimStancesRecord {
   commenter_camps?: Record<string, unknown>;
   user_stance?: string;
   user_note?: string;
+}
+
+export interface ClaimSimilarityRecord {
+  id?: string;
+  in: string; // record<claim> - source claim
+  out: string; // record<claim> - target claim
+  similarity: number;
+  relationship: "duplicate" | "related" | "contradicts";
+  detected_at: Date;
 }
 
 export interface DigestRecord {
