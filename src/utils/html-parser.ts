@@ -59,12 +59,12 @@ export function decodeHtmlEntities(text: string): string {
     // Decimal entities (&#123;)
     .replace(/&#(\d+);/g, (_, code) => {
       const num = parseInt(code, 10);
-      return num > 0 && num < 0x10ffff ? String.fromCodePoint(num) : "";
+      return num > 0 && num <= 0x10ffff ? String.fromCodePoint(num) : "";
     })
     // Hex entities (&#x7B; or &#X7B;)
     .replace(/&#[xX]([0-9a-fA-F]+);/g, (_, hex) => {
       const num = parseInt(hex, 16);
-      return num > 0 && num < 0x10ffff ? String.fromCodePoint(num) : "";
+      return num > 0 && num <= 0x10ffff ? String.fromCodePoint(num) : "";
     });
 }
 
@@ -128,6 +128,13 @@ const CONTENT_SELECTORS = [
 ];
 
 /**
+ * Minimum text length (in characters) for an element to be considered
+ * as having meaningful content. Elements with less text are skipped
+ * when searching for main content containers.
+ */
+const MIN_CONTENT_LENGTH = 100;
+
+/**
  * Remove non-content elements from document
  */
 export function removeNonContentElements(document: Document): void {
@@ -146,7 +153,7 @@ export function findMainContent(document: Document): Element | null {
     if (element) {
       // Verify it has meaningful content
       const text = element.textContent?.trim() || "";
-      if (text.length > 100) {
+      if (text.length > MIN_CONTENT_LENGTH) {
         return element;
       }
     }
@@ -235,7 +242,8 @@ export function extractTextFromHtml(html: string): string {
     const mainContent = findBestContentContainer(document);
     return extractText(mainContent);
   } catch (error) {
-    console.warn("HTML text extraction failed:", error);
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`HTML text extraction failed: ${message}`);
     return "";
   }
 }
@@ -275,7 +283,8 @@ export function extractTitle(html: string): string {
 
     return "";
   } catch (error) {
-    console.warn("Title extraction failed:", error);
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`Title extraction failed: ${message}`);
     return "";
   }
 }
@@ -305,14 +314,12 @@ export function extractArticle(html: string): ExtractedArticle {
  */
 interface DomainConfig {
   contentSelector: string;
-  titleSelector?: string;
   removeSelectors?: string[];
 }
 
 const DOMAIN_CONFIGS: Record<string, DomainConfig> = {
   "github.com": {
     contentSelector: ".markdown-body, .readme",
-    titleSelector: '[itemprop="name"] a, .js-navigation-open',
     removeSelectors: [".octicon", ".anchor"],
   },
   "medium.com": {
@@ -361,7 +368,8 @@ export function extractForDomain(html: string, domain: string): string {
     // Fallback to generic extraction
     return extractText(findBestContentContainer(document));
   } catch (error) {
-    console.warn(`Domain extraction failed for ${domain}:`, error);
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`Domain extraction failed for ${domain}: ${message}`);
     return extractTextFromHtml(html);
   }
 }
