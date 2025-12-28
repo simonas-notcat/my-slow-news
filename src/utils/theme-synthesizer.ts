@@ -229,24 +229,27 @@ export function formatThemeSynthesisMarkdown(
   if (synthesis.recurring_themes.length > 0) {
     sections.push("## Today's Themes\n");
     for (const theme of synthesis.recurring_themes) {
-      sections.push(`### ${theme.theme}`);
-      sections.push(`*Discussed in: ${theme.posts.join(", ")}*\n`);
+      sections.push(`### ${theme.theme}\n`);
       sections.push(theme.summary + "\n");
+      sections.push("**Discussed in:**");
+      for (const post of theme.posts) {
+        sections.push(`- ${post}`);
+      }
+      sections.push("");
     }
   }
 
-  // Conflicting viewpoints
+  // Conflicting viewpoints - table format
   if (synthesis.conflicting_viewpoints.length > 0) {
     sections.push("## Conflicting Viewpoints\n");
+    sections.push("| Topic | View A | View B |");
+    sections.push("|-------|--------|--------|");
     for (const conflict of synthesis.conflicting_viewpoints) {
-      sections.push(`### ${conflict.topic}`);
-      sections.push(
-        `- **View A** (${conflict.viewpoint_a.sources.join(", ")}): ${conflict.viewpoint_a.position}`
-      );
-      sections.push(
-        `- **View B** (${conflict.viewpoint_b.sources.join(", ")}): ${conflict.viewpoint_b.position}\n`
-      );
+      const viewA = conflict.viewpoint_a.position.replace(/\|/g, "\\|");
+      const viewB = conflict.viewpoint_b.position.replace(/\|/g, "\\|");
+      sections.push(`| ${conflict.topic} | ${viewA} | ${viewB} |`);
     }
+    sections.push("");
   }
 
   // Emerging trends
@@ -254,8 +257,8 @@ export function formatThemeSynthesisMarkdown(
     sections.push("## Emerging Trends\n");
     for (const trend of synthesis.emerging_trends) {
       const confidence = Math.round(trend.confidence * 100);
-      sections.push(`### ${trend.trend} (${confidence}% confidence)`);
-      sections.push(`Evidence: ${trend.evidence.join("; ")}\n`);
+      sections.push(`### ${trend.trend} (${confidence}% confidence)\n`);
+      sections.push(`**Evidence:** ${trend.evidence.join("; ")}\n`);
     }
   }
 

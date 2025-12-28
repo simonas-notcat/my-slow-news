@@ -40,6 +40,75 @@ import {
 } from "../utils/cot-summarizer";
 
 // ============================================================================
+// Helper Functions for Digest Formatting
+// ============================================================================
+
+/**
+ * Formats a date string (YYYY-MM-DD) as a human-readable date
+ * e.g., "Saturday, December 27, 2025"
+ */
+function formatHumanDate(dateStr: string): string {
+  const date = new Date(dateStr + "T12:00:00Z"); // Noon UTC to avoid timezone issues
+  return date.toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+/**
+ * Generates a URL-friendly slug from a title
+ */
+function slugify(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "")
+    .slice(0, 50);
+}
+
+/**
+ * Converts a claim triple to natural language
+ */
+function claimToNaturalLanguage(claim: {
+  subject: string;
+  predicate: string;
+  object: string;
+  confidence: number;
+  source_stance: string;
+}): string {
+  const subject = claim.subject.replace(/-/g, " ");
+  const predicate = claim.predicate.replace(/-/g, " ");
+  const object = claim.object.replace(/-/g, " ");
+  const confidence = Math.round(claim.confidence * 100);
+
+  // Common predicate patterns for natural language
+  const predicateMap: Record<string, (s: string, o: string) => string> = {
+    "is better than": (s, o) => `${s} is better than ${o}`,
+    "is faster than": (s, o) => `${s} is faster than ${o}`,
+    "is safer than": (s, o) => `${s} is safer than ${o}`,
+    "released": (s, o) => `${s} released ${o}`,
+    "announced": (s, o) => `${s} announced ${o}`,
+    "uses": (s, o) => `${s} uses ${o}`,
+    "has": (s, o) => `${s} has ${o}`,
+    "lacks": (s, o) => `${s} lacks ${o}`,
+    "supports": (s, o) => `${s} supports ${o}`,
+    "opposes": (s, o) => `${s} opposes ${o}`,
+    "acquired": (s, o) => `${s} acquired ${o}`,
+    "migrated to": (s, o) => `${s} migrated to ${o}`,
+  };
+
+  // Try to match a known pattern, otherwise use default format
+  const normalized = predicate.toLowerCase();
+  const formatter = predicateMap[normalized];
+  const sentence = formatter ? formatter(subject, object) : `${subject} ${predicate} ${object}`;
+
+  return `${sentence} *(${confidence}% confident)*`;
+}
+
+// ============================================================================
 // Workflow Schemas - Proper type definitions for step inputs/outputs
 // ============================================================================
 
@@ -653,9 +722,33 @@ const generateDigestStep = createStep({
       bySubreddit.set(item.subreddit, list);
     }
 
-    // Generate markdown
+    // Calculate stats
+    const postCount = summaries_with_claims.length;
+    const subredditCount = bySubreddit.size;
+    const claimCount = all_claims.length;
+
+    // Generate markdown with improved header
+    const humanDate = formatHumanDate(date);
     let markdown = `# My Slow News - ${date}\n\n`;
-    markdown += `*Generated at ${new Date().toISOString()}*\n\n`;
+    markdown += `*${humanDate} • ${postCount} posts • ${subredditCount} subreddits • ${claimCount} claims extracted*\n\n`;
+
+    // Generate TL;DR section
+    if (summaries_with_claims.length > 0) {
+      markdown += `## TL;DR\n\n`;
+      for (const item of summaries_with_claims.slice(0, 5)) {
+        const sentiment = item.summary.sentiment;
+        const emoji = sentiment === "positive" ? "🔥" :
+                     sentiment === "negative" ? "⚠️" :
+                     sentiment === "mixed" ? "🔄" : "📰";
+        // Create a one-line summary from the first sentence
+        const firstSentence = item.summary.summary.split(/[.!?]/)[0].trim();
+        const shortSummary = firstSentence.length > 100
+          ? firstSentence.slice(0, 100) + "..."
+          : firstSentence;
+        markdown += `- ${emoji} **${item.post.title.slice(0, 60)}${item.post.title.length > 60 ? "..." : ""}** — ${shortSummary}\n`;
+      }
+      markdown += `\n---\n\n`;
+    }
 
     // Get theme synthesis config
     const summarizationConfig = config.summarization ?? {};
@@ -695,36 +788,38 @@ const generateDigestStep = createStep({
 
       for (const item of items) {
         const { post, summary, claims } = item;
+        const slug = slugify(post.title);
 
-        markdown += `### [${post.title}](${post.permalink})\n\n`;
+        markdown += `### [${post.title}](${post.permalink}) {#${slug}}\n\n`;
 
         // Build metadata line with quality indicators
         const confidencePct = Math.round((summary.confidence ?? 0.7) * 100);
         const controversyBadge = summary.controversy_level !== "none"
-          ? ` | **Controversy:** ${summary.controversy_level}`
+          ? ` • **Controversy:** ${summary.controversy_level}`
           : "";
         const densityIndicator = summary.information_density === "sparse" ? " ⚠️" : "";
 
-        markdown += `**Author:** u/${post.author} | **Score:** ${post.score} | **Confidence:** ${confidencePct}%${controversyBadge}${densityIndicator}\n\n`;
+        markdown += `**u/${post.author}** • Score: ${post.score} • Confidence: ${confidencePct}%${controversyBadge}${densityIndicator}\n\n`;
         markdown += `${summary.summary}\n\n`;
 
         // Show missing context warnings
         if (summary.missing_context && summary.missing_context.length > 0) {
-          markdown += `> **Note:** Missing context: ${summary.missing_context.join(", ")}\n\n`;
+          markdown += `> ⚠️ **Missing context:** ${summary.missing_context.join(", ")}\n\n`;
         }
 
-        if (summary.notable_comments?.length > 0) {
-          markdown += `**Notable Comments:**\n`;
-          for (const comment of summary.notable_comments) {
-            markdown += `- ${comment}\n`;
-          }
-          markdown += `\n`;
+        // Key topics as tags
+        if (summary.key_topics?.length > 0) {
+          markdown += `**Topics:** ${summary.key_topics.map(t => `\`${t}\``).join(" ")}\n\n`;
         }
 
+        // Claims in natural language format
         if (claims?.length > 0) {
-          markdown += `**Claims Extracted:**\n`;
-          for (const claim of claims) {
-            markdown += `- \`(${claim.subject}, ${claim.predicate}, ${claim.object})\` - ${claim.source_stance} (${Math.round(claim.confidence * 100)}% confidence)\n`;
+          markdown += `**Key Claims:**\n`;
+          for (const claim of claims.slice(0, 5)) { // Limit to top 5 claims
+            markdown += `- ${claimToNaturalLanguage(claim)}\n`;
+          }
+          if (claims.length > 5) {
+            markdown += `- *...and ${claims.length - 5} more claims*\n`;
           }
           markdown += `\n`;
         }
