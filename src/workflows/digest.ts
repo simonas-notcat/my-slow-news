@@ -44,6 +44,8 @@ import {
   slugify,
   claimToNaturalLanguage,
 } from "../utils/digest-format";
+import { getEmbeddingService, type EmbeddingConfig } from "../embeddings";
+import { ClaimDeduplicationService } from "../embeddings/deduplication";
 
 // ============================================================================
 // Workflow Schemas - Proper type definitions for step inputs/outputs
@@ -872,7 +874,38 @@ const saveToDatabaseStep = createStep({
         }
       }
 
-      // Save claims and create relationships
+      // Save claims with optional semantic deduplication
+      const deduplicationEnabled = config.semantic?.deduplication?.enabled ?? false;
+      let duplicatesDetected = 0;
+      let newClaimsCreated = 0;
+      let deduplicationService: ClaimDeduplicationService | null = null;
+
+      // Initialize deduplication service if enabled
+      if (deduplicationEnabled) {
+        try {
+          const embeddingConfig: EmbeddingConfig = {
+            provider: config.embeddings?.provider ?? "openai",
+            model: config.embeddings?.model ?? "text-embedding-3-small",
+            dimensions: config.embeddings?.dimensions ?? 1536,
+            cacheEnabled: config.embeddings?.cache_enabled ?? true,
+            batchSize: config.embeddings?.batch_size ?? 100,
+          };
+          const embeddingService = getEmbeddingService(embeddingConfig);
+          deduplicationService = new ClaimDeduplicationService(
+            db,
+            embeddingService,
+            {
+              duplicateThreshold: config.semantic?.deduplication?.similarity_threshold ?? 0.92,
+              relatedThreshold: config.semantic?.deduplication?.related_threshold ?? 0.75,
+            }
+          );
+          console.log("  Semantic deduplication enabled");
+        } catch (error) {
+          console.warn("  Failed to initialize deduplication service:", error);
+          console.log("  Falling back to simple claim storage");
+        }
+      }
+
       for (const claim of all_claims) {
         // Skip invalid claims
         if (!claim.subject || !claim.predicate || !claim.object) {
@@ -884,20 +917,49 @@ const saveToDatabaseStep = createStep({
           continue;
         }
 
-        // Upsert claim
-        const claimResult = await db.query<any[][]>(
-          `INSERT INTO claim (subject, predicate, object, confidence, extracted_at)
-           VALUES ($subject, $predicate, $object, $confidence, time::now())
-           ON DUPLICATE KEY UPDATE confidence = math::max([confidence, $confidence])`,
-          {
-            subject: claim.subject,
-            predicate: claim.predicate,
-            object: claim.object,
-            confidence: claim.confidence ?? 0.5,
-          }
-        );
+        let claimId: string | undefined;
 
-        const claimId = claimResult[0]?.[0]?.id;
+        if (deduplicationService) {
+          // Use semantic deduplication
+          try {
+            const result = await deduplicationService.processNewClaim({
+              subject: claim.subject,
+              predicate: claim.predicate,
+              object: claim.object,
+              confidence: claim.confidence ?? 0.5,
+            });
+
+            claimId = result.claim.id as string;
+
+            if (result.isNew) {
+              newClaimsCreated++;
+            } else {
+              duplicatesDetected++;
+              console.log(`  Duplicate: "${claim.subject} ${claim.predicate} ${claim.object}" → merged with existing`);
+            }
+          } catch (error) {
+            console.warn(`  Failed to deduplicate claim, falling back to simple storage:`, error);
+            // Fall through to simple storage below
+          }
+        }
+
+        // Fall back to simple storage if deduplication not used or failed
+        if (!claimId) {
+          const claimResult = await db.query<any[][]>(
+            `INSERT INTO claim (subject, predicate, object, confidence, extracted_at, is_canonical)
+             VALUES ($subject, $predicate, $object, $confidence, time::now(), true)
+             ON DUPLICATE KEY UPDATE confidence = math::max([confidence, $confidence])`,
+            {
+              subject: claim.subject,
+              predicate: claim.predicate,
+              object: claim.object,
+              confidence: claim.confidence ?? 0.5,
+            }
+          );
+          claimId = claimResult[0]?.[0]?.id;
+          newClaimsCreated++;
+        }
+
         if (claimId) {
           savedClaimIds.push(claimId);
 
@@ -920,6 +982,11 @@ const saveToDatabaseStep = createStep({
             { name: claim.predicate }
           );
         }
+      }
+
+      // Log deduplication statistics
+      if (deduplicationEnabled && deduplicationService) {
+        console.log(`  Deduplication: ${newClaimsCreated} new, ${duplicatesDetected} duplicates merged`);
       }
 
       // Create digest record
