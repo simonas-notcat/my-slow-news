@@ -174,9 +174,11 @@ DEFINE FIELD embedding_model ON claim TYPE option<string>;
 DEFINE FIELD embedded_at ON claim TYPE option<datetime>;
 
 -- Vector index for similarity search
-DEFINE INDEX idx_claim_embedding ON claim
-  FIELDS embedding MTREE DIMENSION 1536
-  DIST COSINE;
+-- Note: Verify syntax against your SurrealDB version (1.x vs 2.x)
+-- SurrealDB 2.x syntax:
+DEFINE INDEX idx_claim_embedding ON claim FIELDS embedding
+  VECTOR MTREE DIMENSION 1536 DIST COSINE TYPE F32;
+-- SurrealDB 1.x may use different syntax - check docs
 
 -- Claim similarity links (for deduplication)
 DEFINE TABLE claim_similarity TYPE RELATION
@@ -202,9 +204,8 @@ DEFINE FIELD assigned_at ON claim_theme TYPE datetime;
 -- Post embeddings for cross-subreddit bridging
 DEFINE FIELD embedding ON post TYPE option<array<float>>;
 DEFINE FIELD embedding_model ON post TYPE option<string>;
-DEFINE INDEX idx_post_embedding ON post
-  FIELDS embedding MTREE DIMENSION 1536
-  DIST COSINE;
+DEFINE INDEX idx_post_embedding ON post FIELDS embedding
+  VECTOR MTREE DIMENSION 1536 DIST COSINE TYPE F32;
 ```
 
 ### Configuration Additions

@@ -70,6 +70,7 @@ export interface EmbeddingResult {
 
 ```typescript
 import type { EmbeddingProvider } from '../types';
+import { withRetry } from '../../utils/retry';
 
 export class OpenAIEmbeddingProvider implements EmbeddingProvider {
   name = 'openai';
@@ -78,7 +79,14 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
   private model: string;
 
   constructor(config: { model: string; dimensions: number }) {
-    this.apiKey = process.env.OPENAI_API_KEY!;
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      throw new Error(
+        'OPENAI_API_KEY environment variable is required for OpenAI embeddings. ' +
+        'Set it in your .env file or use the ollama provider instead.'
+      );
+    }
+    this.apiKey = apiKey;
     this.model = config.model;
     this.dimensions = config.dimensions;
   }
@@ -89,27 +97,57 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
   }
 
   async embedBatch(texts: string[]): Promise<number[][]> {
-    const response = await fetch('https://api.openai.com/v1/embeddings', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${this.apiKey}`,
-        'Content-Type': 'application/json',
+    return withRetry(
+      async () => {
+        const response = await fetch('https://api.openai.com/v1/embeddings', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${this.apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: this.model,
+            input: texts,
+            dimensions: this.dimensions,
+          }),
+        });
+
+        // Handle rate limiting with specific error
+        if (response.status === 429) {
+          const retryAfter = response.headers.get('retry-after');
+          throw new Error(
+            `OpenAI rate limited. Retry after: ${retryAfter || 'unknown'}s`
+          );
+        }
+
+        // Handle other errors
+        if (!response.ok) {
+          const errorBody = await response.text().catch(() => 'Unknown error');
+          throw new Error(
+            `OpenAI API error ${response.status}: ${errorBody}`
+          );
+        }
+
+        const data = await response.json();
+        return data.data
+          .sort((a: { index: number }, b: { index: number }) => a.index - b.index)
+          .map((item: { embedding: number[] }) => item.embedding);
       },
-      body: JSON.stringify({
-        model: this.model,
-        input: texts,
-        dimensions: this.dimensions,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`OpenAI API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return data.data
-      .sort((a, b) => a.index - b.index)
-      .map((item) => item.embedding);
+      {
+        maxRetries: 3,
+        baseDelayMs: 1000,
+        maxDelayMs: 10000,
+        shouldRetry: (error) => {
+          const message = error instanceof Error ? error.message : String(error);
+          // Retry on rate limits and transient errors
+          return message.includes('rate limit') ||
+                 message.includes('429') ||
+                 message.includes('500') ||
+                 message.includes('502') ||
+                 message.includes('503');
+        },
+      }
+    );
   }
 }
 ```
@@ -121,16 +159,47 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
 ```typescript
 import type { EmbeddingProvider } from '../types';
 
+// Simple concurrency limiter
+async function withConcurrencyLimit<T>(
+  tasks: (() => Promise<T>)[],
+  limit: number
+): Promise<T[]> {
+  const results: T[] = new Array(tasks.length);
+  let currentIndex = 0;
+
+  async function runNext(): Promise<void> {
+    while (currentIndex < tasks.length) {
+      const index = currentIndex++;
+      results[index] = await tasks[index]();
+    }
+  }
+
+  // Start 'limit' number of workers
+  const workers = Array(Math.min(limit, tasks.length))
+    .fill(null)
+    .map(() => runNext());
+
+  await Promise.all(workers);
+  return results;
+}
+
 export class OllamaEmbeddingProvider implements EmbeddingProvider {
   name = 'ollama';
   dimensions: number;
   private baseUrl: string;
   private model: string;
+  private concurrencyLimit: number;
 
-  constructor(config: { baseUrl: string; model: string; dimensions: number }) {
+  constructor(config: {
+    baseUrl: string;
+    model: string;
+    dimensions: number;
+    concurrencyLimit?: number;
+  }) {
     this.baseUrl = config.baseUrl;
     this.model = config.model;
     this.dimensions = config.dimensions;
+    this.concurrencyLimit = config.concurrencyLimit ?? 4; // Default 4 concurrent requests
   }
 
   async embed(text: string): Promise<number[]> {
@@ -144,7 +213,8 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
     });
 
     if (!response.ok) {
-      throw new Error(`Ollama API error: ${response.status}`);
+      const errorBody = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Ollama API error ${response.status}: ${errorBody}`);
     }
 
     const data = await response.json();
@@ -152,12 +222,10 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
   }
 
   async embedBatch(texts: string[]): Promise<number[][]> {
-    // Ollama doesn't support batch, run sequentially
-    const results: number[][] = [];
-    for (const text of texts) {
-      results.push(await this.embed(text));
-    }
-    return results;
+    // Ollama doesn't support batch API, but we can parallelize requests
+    // with a concurrency limit to avoid overwhelming the server
+    const tasks = texts.map((text) => () => this.embed(text));
+    return withConcurrencyLimit(tasks, this.concurrencyLimit);
   }
 }
 ```
@@ -221,7 +289,8 @@ export class EmbeddingService {
   }
 
   async embedBatch(texts: string[]): Promise<EmbeddingResult[]> {
-    const results: EmbeddingResult[] = [];
+    // Pre-initialize results array to avoid sparse array issues
+    const results: EmbeddingResult[] = new Array(texts.length);
     const uncached: { text: string; index: number }[] = [];
 
     // Check cache for each text
@@ -266,6 +335,11 @@ export class EmbeddingService {
     return results;
   }
 
+  /** Get the provider name (e.g., 'openai', 'ollama') */
+  get name(): string {
+    return this.provider.name;
+  }
+
   get dimensions(): number {
     return this.provider.dimensions;
   }
@@ -293,6 +367,11 @@ export function resetEmbeddingService(): void {
 ```typescript
 import { createHash } from 'crypto';
 
+/**
+ * LRU (Least Recently Used) cache for embeddings.
+ * Uses Map's insertion order property combined with re-insertion on access
+ * to maintain LRU ordering.
+ */
 export class EmbeddingCache {
   private cache: Map<string, number[]> = new Map();
   private maxSize: number;
@@ -307,13 +386,27 @@ export class EmbeddingCache {
 
   async get(text: string): Promise<number[] | null> {
     const key = this.hash(text);
-    return this.cache.get(key) || null;
+    const value = this.cache.get(key);
+
+    if (value !== undefined) {
+      // Move to end (most recently used) by re-inserting
+      this.cache.delete(key);
+      this.cache.set(key, value);
+      return value;
+    }
+
+    return null;
   }
 
   async set(text: string, embedding: number[]): Promise<void> {
     const key = this.hash(text);
 
-    // Simple LRU: remove oldest if at capacity
+    // If key exists, delete first to update insertion order
+    if (this.cache.has(key)) {
+      this.cache.delete(key);
+    }
+
+    // Evict least recently used (first item) if at capacity
     if (this.cache.size >= this.maxSize) {
       const firstKey = this.cache.keys().next().value;
       if (firstKey) this.cache.delete(firstKey);
@@ -324,6 +417,10 @@ export class EmbeddingCache {
 
   clear(): void {
     this.cache.clear();
+  }
+
+  get size(): number {
+    return this.cache.size;
   }
 }
 ```
@@ -344,10 +441,11 @@ DEFINE FIELD embedding_model ON claim TYPE option<string>;
 DEFINE FIELD embedded_at ON claim TYPE option<datetime>;
 
 -- Vector index for similarity search
--- Note: SurrealDB uses MTREE for vector indexes
-DEFINE INDEX idx_claim_embedding ON claim
-  FIELDS embedding MTREE DIMENSION 1536
-  DIST COSINE;
+-- Note: Verify syntax against your SurrealDB version (1.x vs 2.x)
+-- SurrealDB 2.x syntax:
+DEFINE INDEX idx_claim_embedding ON claim FIELDS embedding
+  VECTOR MTREE DIMENSION 1536 DIST COSINE TYPE F32;
+-- For SurrealDB 1.x, check the documentation as syntax may differ
 
 -- Claim similarity relations
 DEFINE TABLE claim_similarity TYPE RELATION
@@ -655,7 +753,7 @@ export class ClaimDeduplicationService {
     `, {
       ...claim,
       embedding,
-      model: 'text-embedding-3-small',
+      model: this.embeddings.name,
     });
 
     // Create similarity relations for related claims
@@ -733,22 +831,50 @@ export class ClaimDeduplicationService {
 
   /**
    * Detect duplicates among existing claims (for retroactive dedup).
+   *
+   * WARNING: This method has O(n²) time complexity where n = number of claims.
+   * For large datasets (>1000 claims), consider:
+   * - Using vector index queries instead of pairwise comparison
+   * - Processing in batches with progress reporting
+   * - Running as a background job
+   *
+   * @param options.maxClaims - Limit claims to process (default: 1000)
+   * @param options.onProgress - Progress callback
    */
-  async detectExistingDuplicates(): Promise<{
+  async detectExistingDuplicates(options: {
+    maxClaims?: number;
+    onProgress?: (checked: number, total: number) => void;
+  } = {}): Promise<{
     duplicatePairs: Array<{ claim1: string; claim2: string; similarity: number }>;
+    truncated: boolean;
   }> {
+    const { maxClaims = 1000, onProgress } = options;
     const duplicatePairs: Array<{ claim1: string; claim2: string; similarity: number }> = [];
 
     // Get all canonical claims with embeddings
-    const [claims] = await this.db.query<[ClaimRecord[]]>(`
+    const [allClaims] = await this.db.query<[ClaimRecord[]]>(`
       SELECT * FROM claim
       WHERE embedding IS NOT NONE AND is_canonical = true
-    `);
+      LIMIT $limit
+    `, { limit: maxClaims + 1 });
 
-    // Compare each pair (O(n^2) but fine for reasonable claim counts)
+    const truncated = allClaims.length > maxClaims;
+    const claims = allClaims.slice(0, maxClaims);
+
+    if (claims.length > 500) {
+      console.warn(
+        `Warning: Comparing ${claims.length} claims pairwise (${(claims.length * (claims.length - 1)) / 2} comparisons). ` +
+        `This may take a while. Consider using vector index queries for better performance.`
+      );
+    }
+
+    const totalPairs = (claims.length * (claims.length - 1)) / 2;
+    let checkedPairs = 0;
+
+    // Compare each pair (O(n²))
     for (let i = 0; i < claims.length; i++) {
       for (let j = i + 1; j < claims.length; j++) {
-        const similarity = await this.computeSimilarity(
+        const similarity = this.computeSimilarity(
           claims[i].embedding!,
           claims[j].embedding!
         );
@@ -760,13 +886,18 @@ export class ClaimDeduplicationService {
             similarity,
           });
         }
+
+        checkedPairs++;
+        if (onProgress && checkedPairs % 1000 === 0) {
+          onProgress(checkedPairs, totalPairs);
+        }
       }
     }
 
-    return { duplicatePairs };
+    return { duplicatePairs, truncated };
   }
 
-  private async computeSimilarity(a: number[], b: number[]): Promise<number> {
+  private computeSimilarity(a: number[], b: number[]): number {
     let dotProduct = 0;
     let normA = 0;
     let normB = 0;
@@ -889,7 +1020,8 @@ program
 program
   .command('detect-duplicates')
   .description('Find duplicate claims in existing data')
-  .action(async () => {
+  .option('-m, --max-claims <count>', 'Maximum claims to process', '1000')
+  .action(async (options) => {
     const config = loadConfig();
     const db = await getDb(config);
 
@@ -903,7 +1035,18 @@ program
 
       console.log('Scanning for duplicate claims...\n');
 
-      const { duplicatePairs } = await deduper.detectExistingDuplicates();
+      const { duplicatePairs, truncated } = await deduper.detectExistingDuplicates({
+        maxClaims: parseInt(options.maxClaims, 10),
+        onProgress: (checked, total) => {
+          process.stdout.write(`\rProgress: ${checked}/${total} pairs checked`);
+        },
+      });
+
+      console.log('\n');
+
+      if (truncated) {
+        console.log(`Warning: Only processed first ${options.maxClaims} claims. Use --max-claims to increase.\n`);
+      }
 
       if (duplicatePairs.length === 0) {
         console.log('No duplicates found!');
@@ -1090,12 +1233,156 @@ describe('cosineSimilarity', () => {
 ```typescript
 import { describe, test, expect, mock, beforeEach } from 'bun:test';
 import { ClaimDeduplicationService } from './deduplication';
+import type { EmbeddingService } from './index';
+import type Surreal from 'surrealdb';
 
 describe('ClaimDeduplicationService', () => {
-  // Mock implementations for db and embedding service
-  // Test processNewClaim with and without duplicates
-  // Test backfillEmbeddings
-  // Test detectExistingDuplicates
+  // Mock embedding service
+  const mockEmbeddingService = {
+    name: 'test-provider',
+    dimensions: 4,
+    embed: mock(() => Promise.resolve({
+      text: 'test',
+      embedding: [0.1, 0.2, 0.3, 0.4],
+      model: 'test-provider',
+      cached: false,
+    })),
+    embedBatch: mock(() => Promise.resolve([
+      { text: 'test', embedding: [0.1, 0.2, 0.3, 0.4], model: 'test-provider', cached: false },
+    ])),
+  } as unknown as EmbeddingService;
+
+  // Mock database
+  const mockDb = {
+    query: mock(() => Promise.resolve([[]])),
+  } as unknown as Surreal;
+
+  const config = {
+    duplicateThreshold: 0.92,
+    relatedThreshold: 0.75,
+  };
+
+  let service: ClaimDeduplicationService;
+
+  beforeEach(() => {
+    (mockDb.query as ReturnType<typeof mock>).mockClear();
+    (mockEmbeddingService.embed as ReturnType<typeof mock>).mockClear();
+    service = new ClaimDeduplicationService(mockDb, mockEmbeddingService, config);
+  });
+
+  describe('processNewClaim', () => {
+    test('creates new claim when no duplicates exist', async () => {
+      // Mock: no similar claims found
+      (mockDb.query as ReturnType<typeof mock>)
+        .mockImplementationOnce(() => Promise.resolve([[]]))  // findSimilarClaims
+        .mockImplementationOnce(() => Promise.resolve([[{ id: 'claim:new', subject: 'Test' }]]));  // CREATE
+
+      const result = await service.processNewClaim({
+        subject: 'Rust',
+        predicate: 'is-safer-than',
+        object: 'C++',
+        confidence: 0.9,
+      });
+
+      expect(result.isNew).toBe(true);
+      expect(result.claim.id).toBe('claim:new');
+      expect(mockEmbeddingService.embed).toHaveBeenCalledWith('Rust is safer than C++');
+    });
+
+    test('links to existing claim when duplicate found', async () => {
+      const existingClaim = {
+        id: 'claim:existing',
+        subject: 'Rust',
+        predicate: 'is-safer-than',
+        object: 'C++',
+        confidence: 0.8,
+        embedding: [0.1, 0.2, 0.3, 0.4],
+      };
+
+      // Mock: similar claim found with high similarity
+      (mockDb.query as ReturnType<typeof mock>)
+        .mockImplementationOnce(() => Promise.resolve([[
+          { claim: existingClaim, similarity: 0.95 }
+        ]]))  // findSimilarClaims
+        .mockImplementationOnce(() => Promise.resolve([[{ id: 'claim:dup' }]]))  // CREATE non-canonical
+        .mockImplementationOnce(() => Promise.resolve([[]]))  // RELATE
+        .mockImplementationOnce(() => Promise.resolve([[]]));  // UPDATE confidence
+
+      const result = await service.processNewClaim({
+        subject: 'Rust',
+        predicate: 'is-safer-than',
+        object: 'C++',
+        confidence: 0.95,
+      });
+
+      expect(result.isNew).toBe(false);
+      expect(result.duplicateOf).toBeDefined();
+      expect(result.claim.id).toBe('claim:existing');
+    });
+  });
+
+  describe('detectExistingDuplicates', () => {
+    test('finds duplicate pairs above threshold', async () => {
+      const claims = [
+        { id: 'claim:1', embedding: [1, 0, 0, 0] },
+        { id: 'claim:2', embedding: [0.99, 0.1, 0, 0] },  // Very similar to claim:1
+        { id: 'claim:3', embedding: [0, 0, 1, 0] },       // Different
+      ];
+
+      (mockDb.query as ReturnType<typeof mock>)
+        .mockImplementationOnce(() => Promise.resolve([claims]));
+
+      const { duplicatePairs, truncated } = await service.detectExistingDuplicates();
+
+      expect(truncated).toBe(false);
+      // claim:1 and claim:2 should be detected as duplicates
+      expect(duplicatePairs.length).toBeGreaterThan(0);
+      expect(duplicatePairs[0].claim1).toBe('claim:1');
+      expect(duplicatePairs[0].claim2).toBe('claim:2');
+    });
+
+    test('respects maxClaims limit', async () => {
+      const claims = Array(1001).fill(null).map((_, i) => ({
+        id: `claim:${i}`,
+        embedding: [1, 0, 0, 0],
+      }));
+
+      (mockDb.query as ReturnType<typeof mock>)
+        .mockImplementationOnce(() => Promise.resolve([claims]));
+
+      const { truncated } = await service.detectExistingDuplicates({ maxClaims: 100 });
+
+      expect(truncated).toBe(true);
+    });
+  });
+
+  describe('backfillEmbeddings', () => {
+    test('processes claims in batches', async () => {
+      const claims = [
+        { id: 'claim:1', subject: 'A', predicate: 'has', object: 'B' },
+        { id: 'claim:2', subject: 'C', predicate: 'has', object: 'D' },
+      ];
+
+      (mockDb.query as ReturnType<typeof mock>)
+        .mockImplementationOnce(() => Promise.resolve([claims]))  // SELECT claims
+        .mockImplementation(() => Promise.resolve([[]]));  // UPDATE calls
+
+      (mockEmbeddingService.embedBatch as ReturnType<typeof mock>)
+        .mockImplementationOnce(() => Promise.resolve([
+          { text: 'A has B', embedding: [0.1, 0.2, 0.3, 0.4], model: 'test', cached: false },
+          { text: 'C has D', embedding: [0.5, 0.6, 0.7, 0.8], model: 'test', cached: false },
+        ]));
+
+      const progress: number[] = [];
+      const { processed, errors } = await service.backfillEmbeddings({
+        batchSize: 10,
+        onProgress: (done) => progress.push(done),
+      });
+
+      expect(processed).toBe(2);
+      expect(errors).toBe(0);
+    });
+  });
 });
 ```
 
