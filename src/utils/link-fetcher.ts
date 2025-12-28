@@ -6,6 +6,11 @@
  */
 
 import type { RedditPost } from "../types";
+import {
+  extractTextFromHtml,
+  extractTitle as extractTitleFromHtml,
+  extractForDomain,
+} from "./html-parser";
 
 export interface LinkContent {
   title: string;
@@ -143,122 +148,30 @@ export function isDomainAllowed(
 }
 
 /**
- * Extracts main content from HTML with error handling
- * Simple extraction focused on article content
+ * Extracts main content from HTML using DOM-based parsing
+ * Uses linkedom for robust HTML parsing instead of regex
  */
 function extractMainContent(html: string): string {
-  if (!html || typeof html !== "string") {
-    return "";
-  }
-
-  try {
-    // Remove scripts, styles, and other non-content elements
-    let content = html
-      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
-      .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
-      .replace(/<nav\b[^<]*(?:(?!<\/nav>)<[^<]*)*<\/nav>/gi, "")
-      .replace(/<header\b[^<]*(?:(?!<\/header>)<[^<]*)*<\/header>/gi, "")
-      .replace(/<footer\b[^<]*(?:(?!<\/footer>)<[^<]*)*<\/footer>/gi, "")
-      .replace(/<!--[\s\S]*?-->/g, "");
-
-    // Try to find article or main content
-    const articleMatch = content.match(/<article[^>]*>([\s\S]*?)<\/article>/i);
-    const mainMatch = content.match(/<main[^>]*>([\s\S]*?)<\/main>/i);
-
-    if (articleMatch) {
-      content = articleMatch[1];
-    } else if (mainMatch) {
-      content = mainMatch[1];
-    }
-
-    // Extract text from remaining HTML
-    content = content
-      .replace(/<[^>]+>/g, " ") // Remove HTML tags
-      .replace(/&nbsp;/g, " ")
-      .replace(/&amp;/g, "&")
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      .replace(/\s+/g, " ") // Normalize whitespace
-      .trim();
-
-    return content;
-  } catch (error) {
-    console.warn("HTML extraction failed:", error);
-    return "";
-  }
+  return extractTextFromHtml(html);
 }
 
 /**
- * Extracts title from HTML with error handling
+ * Extracts title from HTML using DOM-based parsing
  */
 function extractTitle(html: string): string {
-  if (!html || typeof html !== "string") {
-    return "";
-  }
-
-  try {
-    const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-    if (titleMatch) {
-      return titleMatch[1].trim();
-    }
-
-    const h1Match = html.match(/<h1[^>]*>([^<]+)<\/h1>/i);
-    if (h1Match) {
-      return h1Match[1].trim();
-    }
-
-    return "";
-  } catch (error) {
-    console.warn("Title extraction failed:", error);
-    return "";
-  }
+  return extractTitleFromHtml(html);
 }
 
 /**
- * Extracts GitHub repository content with error handling
+ * List of domains with custom extraction logic
  */
-function extractGitHubContent(html: string): string {
-  if (!html || typeof html !== "string") {
-    return "";
-  }
-
-  try {
-    // Try to find README content
-    const readmeMatch = html.match(
-      /<article[^>]*class="[^"]*markdown-body[^"]*"[^>]*>([\s\S]*?)<\/article>/i
-    );
-
-    if (readmeMatch) {
-      return extractMainContent(readmeMatch[1]);
-    }
-
-    // Fallback to description
-    const descMatch = html.match(
-      /<p[^>]*class="[^"]*f4[^"]*"[^>]*>([^<]+)<\/p>/i
-    );
-    if (descMatch) {
-      return descMatch[1].trim();
-    }
-
-    return extractMainContent(html);
-  } catch (error) {
-    console.warn("GitHub content extraction failed:", error);
-    return extractMainContent(html);
-  }
-}
-
-/**
- * Domain-specific content extractors
- */
-const domainExtractors: Record<string, (html: string) => string> = {
-  "github.com": extractGitHubContent,
-  "medium.com": extractMainContent,
-  "dev.to": extractMainContent,
-  "hashnode.dev": extractMainContent,
-  "substack.com": extractMainContent,
-};
+const CUSTOM_DOMAINS = [
+  "github.com",
+  "medium.com",
+  "dev.to",
+  "hashnode.dev",
+  "substack.com",
+];
 
 /**
  * Fetches and extracts content from a URL
@@ -336,11 +249,11 @@ export async function fetchLinkContent(
     const html = await response.text();
     const title = extractTitle(html);
 
-    // Use domain-specific extractor if available
-    const extractor = Object.entries(domainExtractors).find(([d]) =>
-      domain.includes(d)
-    );
-    let content = extractor ? extractor[1](html) : extractMainContent(html);
+    // Use domain-specific extractor if available, otherwise generic extraction
+    const isCustomDomain = CUSTOM_DOMAINS.some((d) => domain.includes(d));
+    let content = isCustomDomain
+      ? extractForDomain(html, domain)
+      : extractMainContent(html);
 
     // Truncate if needed
     const truncated = content.length > opts.maxLength;
