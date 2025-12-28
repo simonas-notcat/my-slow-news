@@ -8,24 +8,10 @@ import type { RedditPost, RedditComment, ScrapedContent } from "../types";
 import { withRetry } from "../../utils/retry";
 import { getRandomUserAgent } from "../utils/user-agent-pool";
 import { globalRateLimiter } from "../utils/rate-limiter";
+import { getTextContent, extractNumber } from "../../utils/html-parser";
 
 // Rate limit errors that should trigger retry
 const RETRY_PATTERNS = ["429", "rate limit", "503", "ECONNRESET", "ETIMEDOUT"];
-
-/**
- * Extract text content from an element, handling null cases
- */
-function getTextContent(element: Element | null): string {
-  return element?.textContent?.trim() || "";
-}
-
-/**
- * Extract number from text (e.g., "123 points" -> 123)
- */
-function extractNumber(text: string): number {
-  const match = text.match(/\d+/);
-  return match ? parseInt(match[0], 10) : 0;
-}
 
 /**
  * Extract Reddit ID from data-fullname attribute
