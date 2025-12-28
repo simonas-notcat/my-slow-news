@@ -169,7 +169,8 @@ link_fetching:
   enabled: true
   timeout_ms: 10000
   max_content_length: 5000
-  blocked_domains: [twitter.com, x.com, facebook.com]
+  allowed_domains: []
+  blocked_domains: [twitter.com, x.com, facebook.com, instagram.com, tiktok.com]
 ```
 
 ## Database Schema

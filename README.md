@@ -251,6 +251,7 @@ summarization:
 link_fetching:
   enabled: true
   timeout_ms: 10000
+  blocked_domains: [twitter.com, x.com, facebook.com, instagram.com, tiktok.com]
 ```
 
 ## Project Structure
