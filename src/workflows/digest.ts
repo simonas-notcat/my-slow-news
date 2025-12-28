@@ -21,15 +21,23 @@ import {
   getUsageStats,
   BudgetExceededError,
 } from "../utils/budget-tracker";
-import { selectDiverseComments } from "../utils/comment-selector";
+import { selectDiverseComments, type CommentSelectionOptions } from "../utils/comment-selector";
 import { isLinkPost, fetchLinkContent, formatLinkContentForPrompt } from "../utils/link-fetcher";
 import { detectControversy } from "../utils/controversy-detector";
 import {
   synthesizeThemes,
   formatThemeSynthesisMarkdown,
-  shouldSynthesizeThemes,
   type PostSummaryInput,
 } from "../utils/theme-synthesizer";
+import {
+  shouldUseHierarchical,
+  hierarchicalSummarize,
+  formatThreadSummariesForDigest,
+} from "../utils/hierarchical-summarizer";
+import {
+  cotSummarize,
+  formatControversyAnalysisMarkdown,
+} from "../utils/cot-summarizer";
 
 // ============================================================================
 // Workflow Schemas - Proper type definitions for step inputs/outputs
@@ -228,37 +236,159 @@ const summarizeStep = createStep({
     const config = loadConfig();
     const agent = getSummarizerAgent();
 
+    // Get config settings with defaults
+    const summarizationConfig = config.summarization ?? {};
+    const commentSelectionConfig = summarizationConfig.comment_selection ?? {};
+    const hierarchicalConfig = summarizationConfig.hierarchical ?? {};
+    const controversyConfig = summarizationConfig.controversy ?? {};
+    const linkFetchingConfig = config.link_fetching ?? {};
+
+    // Comment selection weights from config
+    const commentSelectionOptions: CommentSelectionOptions = {
+      topScoredWeight: commentSelectionConfig.top_scored_weight ?? 0.4,
+      repliedToWeight: commentSelectionConfig.replied_to_weight ?? 0.2,
+      controversialWeight: commentSelectionConfig.controversial_weight ?? 0.2,
+      contrarianWeight: commentSelectionConfig.contrarian_weight ?? 0.2,
+    };
+
     console.log(`\nSummarizing ${posts.length} posts...`);
     const summaries: PostWithSummary[] = [];
 
     for (const { subreddit, data } of posts) {
       const { post, comments } = data;
 
-      // Use diverse comment selection for better viewpoint representation
-      const selectedComments = selectDiverseComments(comments, 10);
-
       // Detect controversy level for context
       const controversyResult = detectControversy(post, comments);
-      const controversyHint = controversyResult.isControversial
-        ? `\n\nNote: This appears to be a controversial discussion (score: ${Math.round(controversyResult.score * 100)}%). Please ensure balanced representation of viewpoints.`
-        : "";
+      const controversyThreshold = controversyConfig.threshold ?? 0.5;
+      const useCOT = (controversyConfig.enabled ?? true) &&
+                     (controversyConfig.use_cot ?? true) &&
+                     controversyResult.score >= controversyThreshold;
 
-      // Fetch link content for link posts
-      let linkContentText = "";
-      if (isLinkPost(post)) {
-        try {
-          const linkContent = await fetchLinkContent(post.url, { timeout: 5000 });
-          linkContentText = formatLinkContentForPrompt(linkContent, 1500);
-        } catch (e) {
-          linkContentText = "(Link post - external content could not be fetched)";
-        }
-      }
+      // Check if hierarchical summarization should be used
+      const hierarchicalEnabled = hierarchicalConfig.enabled ?? true;
+      const minCommentsThreshold = hierarchicalConfig.min_comments_threshold ?? 20;
+      const useHierarchical = hierarchicalEnabled &&
+                              shouldUseHierarchical(comments, minCommentsThreshold);
 
-      const contentSection = post.selftext
-        ? post.selftext
-        : linkContentText || "(Link post - no text content)";
+      try {
+        let normalizedSummary: {
+          summary: string;
+          notable_comments: string[];
+          sentiment: "positive" | "negative" | "mixed" | "neutral";
+          key_topics: string[];
+          confidence: number;
+          controversy_level: "none" | "low" | "medium" | "high";
+          information_density: "sparse" | "moderate" | "rich";
+          missing_context: string[];
+        };
 
-      const prompt = `Summarize this Reddit post and its comments:
+        // Route to appropriate summarization strategy
+        if (useCOT) {
+          // Use Chain-of-Thought summarization for controversial posts
+          console.log(`  [COT] Using chain-of-thought for controversial post: ${post.title.slice(0, 50)}...`);
+
+          // COT prompt includes ~2000 chars template + 15 selected comments (400 chars each)
+          // Estimate: template (2000) + post content + 15 comments × 400 chars
+          const cotPromptOverhead = 2000;
+          const cotCommentsEstimate = Math.min(comments.length, 15) * 400;
+          const cotInputTokens = estimateTokens(post.selftext + post.title) + estimateTokens(String(cotPromptOverhead + cotCommentsEstimate));
+          const cotOutputEstimate = 1500; // COT responses are typically longer
+
+          const budgetCheck = checkBudget(cotInputTokens, cotOutputEstimate, config.llm.daily_budget_usd);
+          if (!budgetCheck.allowed) {
+            throw new BudgetExceededError(budgetCheck.remainingBudget, budgetCheck.estimatedCost);
+          }
+
+          const cotResult = await cotSummarize(agent, post, comments, controversyResult);
+
+          // Record actual usage with accurate estimate
+          recordUsage(cotInputTokens, estimateTokens(cotResult.summary));
+
+          normalizedSummary = {
+            summary: cotResult.summary,
+            notable_comments: cotResult.notable_comments ?? [],
+            sentiment: cotResult.sentiment ?? "mixed",
+            key_topics: cotResult.key_topics ?? [],
+            confidence: cotResult.confidence ?? 0.7,
+            controversy_level: cotResult.controversy_level ?? "high",
+            information_density: cotResult.information_density ?? "rich",
+            missing_context: cotResult.missing_context ?? [],
+          };
+
+          // Append controversy analysis to summary if available
+          if (cotResult.controversy_analysis) {
+            const analysisText = formatControversyAnalysisMarkdown(cotResult.controversy_analysis);
+            normalizedSummary.summary += "\n\n" + analysisText;
+          }
+
+        } else if (useHierarchical) {
+          // Use hierarchical summarization for posts with many comments
+          console.log(`  [Hierarchical] Using thread-based summarization for: ${post.title.slice(0, 50)}...`);
+
+          // Hierarchical makes multiple LLM calls: ~5 thread summaries + 1 synthesis
+          // Estimate: 6 calls × (prompt template ~500 + thread content ~1000) = ~9000 tokens input
+          // Plus ~300 tokens output per call = ~1800 tokens output
+          const estimatedThreadCount = Math.min(5, Math.ceil(comments.length / 10));
+          const hierarchicalInputEstimate = estimatedThreadCount * 1500 + 1000; // thread prompts + synthesis prompt
+          const hierarchicalOutputEstimate = estimatedThreadCount * 300 + 500; // thread summaries + synthesis
+
+          const budgetCheck = checkBudget(hierarchicalInputEstimate, hierarchicalOutputEstimate, config.llm.daily_budget_usd);
+          if (!budgetCheck.allowed) {
+            throw new BudgetExceededError(budgetCheck.remainingBudget, budgetCheck.estimatedCost);
+          }
+
+          const hierarchicalResult = await hierarchicalSummarize(agent, post, comments);
+
+          // Record actual usage with accurate estimate
+          const actualThreadCount = hierarchicalResult.threadSummaries.length;
+          const actualInputTokens = actualThreadCount * 1500 + 1000;
+          recordUsage(actualInputTokens, estimateTokens(hierarchicalResult.synthesizedSummary));
+
+          const formattedSummary = formatThreadSummariesForDigest(hierarchicalResult);
+
+          normalizedSummary = {
+            summary: formattedSummary,
+            notable_comments: hierarchicalResult.threadSummaries.map(
+              t => `Thread by u/${t.author}: ${t.summary.slice(0, 100)}...`
+            ),
+            sentiment: "mixed",
+            key_topics: [],
+            confidence: 0.8,
+            controversy_level: controversyResult.isControversial ? "medium" : "none",
+            information_density: "rich",
+            missing_context: [],
+          };
+
+        } else {
+          // Standard summarization
+          // Use diverse comment selection for better viewpoint representation
+          const selectedComments = selectDiverseComments(comments, 10, commentSelectionOptions);
+
+          const controversyHint = controversyResult.isControversial
+            ? `\n\nNote: This appears to be a controversial discussion (score: ${Math.round(controversyResult.score * 100)}%). Please ensure balanced representation of viewpoints.`
+            : "";
+
+          // Fetch link content for link posts
+          let linkContentText = "";
+          if ((linkFetchingConfig.enabled ?? true) && isLinkPost(post)) {
+            try {
+              const linkContent = await fetchLinkContent(post.url, {
+                timeout: linkFetchingConfig.timeout_ms ?? 5000,
+                maxLength: linkFetchingConfig.max_content_length ?? 5000,
+                allowedDomains: linkFetchingConfig.allowed_domains ?? [],
+                blockedDomains: linkFetchingConfig.blocked_domains ?? [],
+              });
+              linkContentText = formatLinkContentForPrompt(linkContent, 1500);
+            } catch (e) {
+              linkContentText = "(Link post - external content could not be fetched)";
+            }
+          }
+
+          const contentSection = post.selftext
+            ? post.selftext
+            : linkContentText || "(Link post - no text content)";
+
+          const prompt = `Summarize this Reddit post and its comments:
 
 Title: ${post.title}
 Author: u/${post.author}
@@ -275,65 +405,65 @@ ${selectedComments
 
 Return a JSON response with: summary, notable_comments, sentiment, key_topics, confidence (0-1), controversy_level (none/low/medium/high), information_density (sparse/moderate/rich), and missing_context (array of strings).`;
 
-      try {
-        // Check budget before making LLM call
-        const inputTokens = estimateTokens(prompt);
-        const estimatedOutputTokens = 500; // Rough estimate for summary
-        const budgetCheck = checkBudget(inputTokens, estimatedOutputTokens, config.llm.daily_budget_usd);
+          // Check budget before making LLM call
+          const inputTokens = estimateTokens(prompt);
+          const estimatedOutputTokens = 500; // Rough estimate for summary
+          const budgetCheck = checkBudget(inputTokens, estimatedOutputTokens, config.llm.daily_budget_usd);
 
-        if (!budgetCheck.allowed) {
-          throw new BudgetExceededError(budgetCheck.remainingBudget, budgetCheck.estimatedCost);
-        }
-
-        // Use retry wrapper for transient failures
-        const result = await withRetry(
-          () => agent.generate(prompt),
-          {
-            maxAttempts: 3,
-            onRetry: (err, attempt, delay) => {
-              console.warn(`Retry ${attempt} for post ${post.id} after ${delay}ms: ${err.message}`);
-            },
+          if (!budgetCheck.allowed) {
+            throw new BudgetExceededError(budgetCheck.remainingBudget, budgetCheck.estimatedCost);
           }
-        );
 
-        const text = typeof result === "string" ? result : (result as { text: string }).text;
+          // Use retry wrapper for transient failures
+          const result = await withRetry(
+            () => agent.generate(prompt),
+            {
+              maxAttempts: 3,
+              onRetry: (err, attempt, delay) => {
+                console.warn(`Retry ${attempt} for post ${post.id} after ${delay}ms: ${err.message}`);
+              },
+            }
+          );
 
-        // Record actual usage (estimate output tokens from response)
-        recordUsage(inputTokens, estimateTokens(text));
+          const text = typeof result === "string" ? result : (result as { text: string }).text;
 
-        // Parse and validate JSON using robust parser
-        const fallback: SummaryResponse = {
-          summary: text,
-          notable_comments: [],
-          sentiment: "neutral",
-          key_topics: [],
-          confidence: 0.5,
-          controversy_level: "none",
-          information_density: "moderate",
-          missing_context: [],
-        };
+          // Record actual usage (estimate output tokens from response)
+          recordUsage(inputTokens, estimateTokens(text));
 
-        const { data: summary, success, error } = parseLLMJson(
-          text,
-          SummaryResponseSchema,
-          fallback
-        );
+          // Parse and validate JSON using robust parser
+          const fallback: SummaryResponse = {
+            summary: text,
+            notable_comments: [],
+            sentiment: "neutral",
+            key_topics: [],
+            confidence: 0.5,
+            controversy_level: "none",
+            information_density: "moderate",
+            missing_context: [],
+          };
 
-        if (!success) {
-          console.warn(`JSON parse warning for post ${post.id}: ${error}`);
+          const { data: summary, success, error } = parseLLMJson(
+            text,
+            SummaryResponseSchema,
+            fallback
+          );
+
+          if (!success) {
+            console.warn(`JSON parse warning for post ${post.id}: ${error}`);
+          }
+
+          // Normalize summary to ensure all fields have values
+          normalizedSummary = {
+            summary: summary.summary,
+            notable_comments: summary.notable_comments ?? [],
+            sentiment: summary.sentiment ?? "neutral",
+            key_topics: summary.key_topics ?? [],
+            confidence: summary.confidence ?? 0.7,
+            controversy_level: summary.controversy_level ?? "none",
+            information_density: summary.information_density ?? "moderate",
+            missing_context: summary.missing_context ?? [],
+          };
         }
-
-        // Normalize summary to ensure all fields have values (Zod defaults are applied during parsing)
-        const normalizedSummary = {
-          summary: summary.summary,
-          notable_comments: summary.notable_comments ?? [],
-          sentiment: summary.sentiment ?? "neutral" as const,
-          key_topics: summary.key_topics ?? [],
-          confidence: summary.confidence ?? 0.7,
-          controversy_level: summary.controversy_level ?? "none" as const,
-          information_density: summary.information_density ?? "moderate" as const,
-          missing_context: summary.missing_context ?? [],
-        };
 
         summaries.push({
           subreddit,
@@ -527,8 +657,14 @@ const generateDigestStep = createStep({
     let markdown = `# My Slow News - ${date}\n\n`;
     markdown += `*Generated at ${new Date().toISOString()}*\n\n`;
 
-    // Theme synthesis across posts (if enough posts)
-    if (shouldSynthesizeThemes(summaries_with_claims.length)) {
+    // Get theme synthesis config
+    const summarizationConfig = config.summarization ?? {};
+    const themeSynthesisConfig = summarizationConfig.theme_synthesis ?? {};
+    const themeSynthesisEnabled = themeSynthesisConfig.enabled ?? true;
+    const minPostsForThemes = themeSynthesisConfig.min_posts ?? 3;
+
+    // Theme synthesis across posts (if enough posts and enabled)
+    if (themeSynthesisEnabled && summaries_with_claims.length >= minPostsForThemes) {
       try {
         const agent = getSummarizerAgent();
         const postInputs: PostSummaryInput[] = summaries_with_claims.map((item: PostWithClaims) => ({

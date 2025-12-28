@@ -25,6 +25,37 @@ export const ConfigSchema = z.object({
     namespace: z.string().default("myslownews"),
     database: z.string().default("main"),
   }),
+  // Summarization feature flags
+  summarization: z.object({
+    comment_selection: z.object({
+      top_scored_weight: z.number().default(0.4),
+      replied_to_weight: z.number().default(0.2),
+      controversial_weight: z.number().default(0.2),
+      contrarian_weight: z.number().default(0.2),
+    }).optional().default({}),
+    hierarchical: z.object({
+      enabled: z.boolean().default(true),
+      min_comments_threshold: z.number().default(20),
+      max_threads: z.number().default(5),
+    }).optional().default({}),
+    controversy: z.object({
+      enabled: z.boolean().default(true),
+      use_cot: z.boolean().default(true),
+      threshold: z.number().default(0.5),
+    }).optional().default({}),
+    theme_synthesis: z.object({
+      enabled: z.boolean().default(true),
+      min_posts: z.number().default(3),
+    }).optional().default({}),
+  }).optional().default({}),
+  // Link fetching configuration
+  link_fetching: z.object({
+    enabled: z.boolean().default(true),
+    timeout_ms: z.number().default(10000),
+    max_content_length: z.number().default(5000),
+    allowed_domains: z.array(z.string()).optional().default([]),
+    blocked_domains: z.array(z.string()).optional().default([]),
+  }).optional().default({}),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

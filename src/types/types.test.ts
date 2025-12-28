@@ -30,7 +30,14 @@ describe("ConfigSchema", () => {
     };
 
     const result = ConfigSchema.parse(validConfig);
-    expect(result).toEqual(validConfig);
+    // Schema applies defaults for optional fields
+    expect(result.sources).toEqual(validConfig.sources);
+    expect(result.llm).toEqual(validConfig.llm);
+    expect(result.output).toEqual(validConfig.output);
+    expect(result.database).toEqual(validConfig.database);
+    // New optional fields get default values
+    expect(result.summarization).toBeDefined();
+    expect(result.link_fetching).toBeDefined();
   });
 
   test("applies default values", () => {
@@ -56,6 +63,13 @@ describe("ConfigSchema", () => {
     expect(result.llm.daily_budget_usd).toBe(5.0);
     expect(result.database.url).toBe("ws://localhost:8000/rpc");
     expect(result.database.namespace).toBe("myslownews");
+    // New summarization defaults
+    expect(result.summarization.hierarchical.enabled).toBe(true);
+    expect(result.summarization.hierarchical.min_comments_threshold).toBe(20);
+    expect(result.summarization.controversy.use_cot).toBe(true);
+    // New link_fetching defaults
+    expect(result.link_fetching.enabled).toBe(true);
+    expect(result.link_fetching.timeout_ms).toBe(10000);
   });
 
   test("rejects invalid provider", () => {

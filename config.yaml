@@ -30,3 +30,38 @@ database:
   # Credentials are loaded from environment variables:
   # SURREALDB_USERNAME (required)
   # SURREALDB_PASSWORD (required)
+
+# Summarization feature flags
+summarization:
+  comment_selection:
+    top_scored_weight: 0.4
+    replied_to_weight: 0.2
+    controversial_weight: 0.2
+    contrarian_weight: 0.2
+
+  hierarchical:
+    enabled: true
+    min_comments_threshold: 20
+    max_threads: 5
+
+  controversy:
+    enabled: true
+    use_cot: true
+    threshold: 0.5
+
+  theme_synthesis:
+    enabled: true
+    min_posts: 3
+
+# Link fetching for external content
+link_fetching:
+  enabled: true
+  timeout_ms: 10000
+  max_content_length: 5000
+  allowed_domains: []
+  blocked_domains:
+    - twitter.com
+    - x.com
+    - facebook.com
+    - instagram.com
+    - tiktok.com
