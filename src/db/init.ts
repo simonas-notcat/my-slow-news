@@ -1,6 +1,10 @@
 import { loadConfig } from "../config";
 import { getDb, closeDb } from "./index";
 import { SCHEMA, SEED_PREDICATES } from "./schema";
+import {
+  migrateVectorSchema,
+  isVectorSchemaApplied,
+} from "./migrations/001-vector-schema";
 
 async function initializeDatabase() {
   console.log("Initializing My Slow News database...");
@@ -43,9 +47,26 @@ async function initializeDatabase() {
     console.error("Error seeding predicates:", error);
   }
 
+  // Apply vector schema migration for semantic features
+  console.log("\nChecking vector schema migration...");
+  const vectorSchemaApplied = await isVectorSchemaApplied(db);
+  if (vectorSchemaApplied) {
+    console.log("Vector schema already applied, skipping migration");
+  } else {
+    await migrateVectorSchema(db);
+  }
+
   // Verify tables exist
   console.log("\nVerifying tables...");
-  const tables = ["post", "comment", "claim", "claim_stances", "digest", "predicate"];
+  const tables = [
+    "post",
+    "comment",
+    "claim",
+    "claim_stances",
+    "digest",
+    "predicate",
+    "claim_similarity",
+  ];
   for (const table of tables) {
     const result = await db.query(`INFO FOR TABLE ${table}`);
     console.log(`  ✓ ${table}`);

@@ -89,3 +89,40 @@ INSERT INTO predicate (name, description, is_builtin, first_seen, usage_count) V
   ('lacks', 'Entity lacks a feature or property', true, time::now(), 0)
 ON DUPLICATE KEY UPDATE usage_count = usage_count;
 `;
+
+/**
+ * Vector schema additions for semantic features.
+ * Adds embedding fields to claims and relations for similarity tracking.
+ */
+export const VECTOR_SCHEMA = `
+-- Add embedding fields to claim table
+DEFINE FIELD embedding ON claim TYPE option<array<float>>;
+DEFINE FIELD embedding_model ON claim TYPE option<string>;
+DEFINE FIELD embedded_at ON claim TYPE option<datetime>;
+
+-- Canonical claim tracking (for deduplication)
+-- If set, this claim is a duplicate of the canonical claim
+DEFINE FIELD canonical_claim ON claim TYPE option<record<claim>>;
+-- False if this claim has been marked as duplicate of another
+DEFINE FIELD is_canonical ON claim TYPE bool DEFAULT true;
+
+-- Claim similarity relations
+DEFINE TABLE claim_similarity TYPE RELATION
+  FROM claim TO claim SCHEMAFULL;
+DEFINE FIELD similarity ON claim_similarity TYPE float;
+-- Values: 'duplicate', 'related', 'contradicts'
+DEFINE FIELD relationship ON claim_similarity TYPE string;
+DEFINE FIELD detected_at ON claim_similarity TYPE datetime;
+DEFINE INDEX idx_claim_similarity_rel ON claim_similarity FIELDS relationship;
+`;
+
+/**
+ * Vector index for similarity search.
+ * Note: SurrealDB vector index syntax may vary by version.
+ * This uses SurrealDB 2.x syntax with MTREE.
+ */
+export const VECTOR_INDEX_SCHEMA = `
+-- Vector index for similarity search (SurrealDB 2.x syntax)
+DEFINE INDEX idx_claim_embedding ON claim FIELDS embedding
+  MTREE DIMENSION 1536 DIST COSINE TYPE F32;
+`;
