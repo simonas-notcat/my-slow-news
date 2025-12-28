@@ -56,6 +56,29 @@ export const ConfigSchema = z.object({
     allowed_domains: z.array(z.string()).optional().default([]),
     blocked_domains: z.array(z.string()).optional().default([]),
   }).optional().default({}),
+  // Embedding configuration for semantic features
+  embeddings: z.object({
+    provider: z.enum(["openai", "ollama"]).default("openai"),
+    model: z.string().default("text-embedding-3-small"),
+    dimensions: z.number().default(1536),
+    cache_enabled: z.boolean().default(true),
+    batch_size: z.number().default(100),
+    openai: z.object({
+      api_key_env: z.string().default("OPENAI_API_KEY"),
+    }).optional(),
+    ollama: z.object({
+      base_url: z.string().default("http://localhost:11434"),
+      model: z.string().default("nomic-embed-text"),
+    }).optional(),
+  }).optional().default({}),
+  // Semantic features configuration
+  semantic: z.object({
+    deduplication: z.object({
+      enabled: z.boolean().default(true),
+      similarity_threshold: z.number().default(0.92),
+      related_threshold: z.number().default(0.75),
+    }).optional().default({}),
+  }).optional().default({}),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
