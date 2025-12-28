@@ -27,7 +27,8 @@ export class EmbeddingCache {
       // Move to end (most recently used) by re-inserting
       this.cache.delete(key);
       this.cache.set(key, value);
-      return value;
+      // Return a copy to prevent accidental mutation of cached values
+      return value.slice();
     }
 
     return null;

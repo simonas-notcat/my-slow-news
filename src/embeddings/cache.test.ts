@@ -118,4 +118,18 @@ describe("EmbeddingCache", () => {
     // Later entries should still be there
     expect(smallCache.get("text-4")).toEqual([4]);
   });
+
+  test("returns copy to prevent mutation of cached values", () => {
+    const original = [0.1, 0.2, 0.3];
+    cache.set("test", original);
+
+    // Get the cached value and mutate it
+    const retrieved = cache.get("test")!;
+    retrieved[0] = 999;
+    retrieved.push(0.4);
+
+    // Original cached value should be unchanged
+    const retrievedAgain = cache.get("test");
+    expect(retrievedAgain).toEqual([0.1, 0.2, 0.3]);
+  });
 });
