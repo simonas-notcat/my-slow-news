@@ -245,9 +245,10 @@ export function formatThemeSynthesisMarkdown(
     sections.push("| Topic | View A | View B |");
     sections.push("|-------|--------|--------|");
     for (const conflict of synthesis.conflicting_viewpoints) {
+      const topic = conflict.topic.replace(/\|/g, "\\|");
       const viewA = conflict.viewpoint_a.position.replace(/\|/g, "\\|");
       const viewB = conflict.viewpoint_b.position.replace(/\|/g, "\\|");
-      sections.push(`| ${conflict.topic} | ${viewA} | ${viewB} |`);
+      sections.push(`| ${topic} | ${viewA} | ${viewB} |`);
     }
     sections.push("");
   }

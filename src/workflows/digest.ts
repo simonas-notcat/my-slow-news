@@ -38,75 +38,12 @@ import {
   cotSummarize,
   formatControversyAnalysisMarkdown,
 } from "../utils/cot-summarizer";
-
-// ============================================================================
-// Helper Functions for Digest Formatting
-// ============================================================================
-
-/**
- * Formats a date string (YYYY-MM-DD) as a human-readable date
- * e.g., "Saturday, December 27, 2025"
- */
-function formatHumanDate(dateStr: string): string {
-  const date = new Date(dateStr + "T12:00:00Z"); // Noon UTC to avoid timezone issues
-  return date.toLocaleDateString("en-US", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    timeZone: "UTC",
-  });
-}
-
-/**
- * Generates a URL-friendly slug from a title
- */
-function slugify(title: string): string {
-  return title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "")
-    .slice(0, 50);
-}
-
-/**
- * Converts a claim triple to natural language
- */
-function claimToNaturalLanguage(claim: {
-  subject: string;
-  predicate: string;
-  object: string;
-  confidence: number;
-  source_stance: string;
-}): string {
-  const subject = claim.subject.replace(/-/g, " ");
-  const predicate = claim.predicate.replace(/-/g, " ");
-  const object = claim.object.replace(/-/g, " ");
-  const confidence = Math.round(claim.confidence * 100);
-
-  // Common predicate patterns for natural language
-  const predicateMap: Record<string, (s: string, o: string) => string> = {
-    "is better than": (s, o) => `${s} is better than ${o}`,
-    "is faster than": (s, o) => `${s} is faster than ${o}`,
-    "is safer than": (s, o) => `${s} is safer than ${o}`,
-    "released": (s, o) => `${s} released ${o}`,
-    "announced": (s, o) => `${s} announced ${o}`,
-    "uses": (s, o) => `${s} uses ${o}`,
-    "has": (s, o) => `${s} has ${o}`,
-    "lacks": (s, o) => `${s} lacks ${o}`,
-    "supports": (s, o) => `${s} supports ${o}`,
-    "opposes": (s, o) => `${s} opposes ${o}`,
-    "acquired": (s, o) => `${s} acquired ${o}`,
-    "migrated to": (s, o) => `${s} migrated to ${o}`,
-  };
-
-  // Try to match a known pattern, otherwise use default format
-  const normalized = predicate.toLowerCase();
-  const formatter = predicateMap[normalized];
-  const sentence = formatter ? formatter(subject, object) : `${subject} ${predicate} ${object}`;
-
-  return `${sentence} *(${confidence}% confident)*`;
-}
+import {
+  sanitizeMarkdown,
+  formatHumanDate,
+  slugify,
+  claimToNaturalLanguage,
+} from "../utils/digest-format";
 
 // ============================================================================
 // Workflow Schemas - Proper type definitions for step inputs/outputs
@@ -740,12 +677,15 @@ const generateDigestStep = createStep({
         const emoji = sentiment === "positive" ? "🔥" :
                      sentiment === "negative" ? "⚠️" :
                      sentiment === "mixed" ? "🔄" : "📰";
-        // Create a one-line summary from the first sentence
+        // Create a one-line summary from the first sentence (sanitized)
         const firstSentence = item.summary.summary.split(/[.!?]/)[0].trim();
-        const shortSummary = firstSentence.length > 100
-          ? firstSentence.slice(0, 100) + "..."
-          : firstSentence;
-        markdown += `- ${emoji} **${item.post.title.slice(0, 60)}${item.post.title.length > 60 ? "..." : ""}** — ${shortSummary}\n`;
+        const shortSummary = sanitizeMarkdown(
+          firstSentence.length > 100 ? firstSentence.slice(0, 100) + "..." : firstSentence
+        );
+        const safeTitle = sanitizeMarkdown(
+          item.post.title.slice(0, 60) + (item.post.title.length > 60 ? "..." : "")
+        );
+        markdown += `- ${emoji} **${safeTitle}** — ${shortSummary}\n`;
       }
       markdown += `\n---\n\n`;
     }
@@ -784,13 +724,15 @@ const generateDigestStep = createStep({
     markdown += `---\n\n`;
 
     for (const [subreddit, items] of bySubreddit) {
-      markdown += `## r/${subreddit}\n\n`;
+      markdown += `## r/${sanitizeMarkdown(subreddit)}\n\n`;
 
       for (const item of items) {
         const { post, summary, claims } = item;
         const slug = slugify(post.title);
+        const safeTitle = sanitizeMarkdown(post.title);
+        const safeAuthor = sanitizeMarkdown(post.author);
 
-        markdown += `### [${post.title}](${post.permalink}) {#${slug}}\n\n`;
+        markdown += `### [${safeTitle}](${post.permalink}) {#${slug}}\n\n`;
 
         // Build metadata line with quality indicators
         const confidencePct = Math.round((summary.confidence ?? 0.7) * 100);
@@ -799,17 +741,18 @@ const generateDigestStep = createStep({
           : "";
         const densityIndicator = summary.information_density === "sparse" ? " ⚠️" : "";
 
-        markdown += `**u/${post.author}** • Score: ${post.score} • Confidence: ${confidencePct}%${controversyBadge}${densityIndicator}\n\n`;
-        markdown += `${summary.summary}\n\n`;
+        markdown += `**u/${safeAuthor}** • Score: ${post.score} • Confidence: ${confidencePct}%${controversyBadge}${densityIndicator}\n\n`;
+        markdown += `${sanitizeMarkdown(summary.summary)}\n\n`;
 
         // Show missing context warnings
         if (summary.missing_context && summary.missing_context.length > 0) {
-          markdown += `> ⚠️ **Missing context:** ${summary.missing_context.join(", ")}\n\n`;
+          const safeContext = summary.missing_context.map(c => sanitizeMarkdown(c)).join(", ");
+          markdown += `> ⚠️ **Missing context:** ${safeContext}\n\n`;
         }
 
         // Key topics as tags
         if (summary.key_topics?.length > 0) {
-          markdown += `**Topics:** ${summary.key_topics.map(t => `\`${t}\``).join(" ")}\n\n`;
+          markdown += `**Topics:** ${summary.key_topics.map(t => `\`${sanitizeMarkdown(t)}\``).join(" ")}\n\n`;
         }
 
         // Claims in natural language format
