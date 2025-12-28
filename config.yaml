@@ -65,3 +65,21 @@ link_fetching:
     - facebook.com
     - instagram.com
     - tiktok.com
+
+# Embedding configuration for semantic features
+embeddings:
+  provider: openai  # 'openai' or 'ollama'
+  model: text-embedding-3-small
+  dimensions: 1536  # OpenAI supports: 512, 1536, 3072
+  cache_enabled: true
+  cache_size: 10000
+  batch_size: 100
+  # OpenAI requires OPENAI_API_KEY environment variable
+  # For Ollama, set OLLAMA_BASE_URL (defaults to http://localhost:11434)
+
+# Semantic features configuration
+semantic:
+  deduplication:
+    enabled: true
+    similarity_threshold: 0.92  # Claims above this are duplicates
+    related_threshold: 0.75     # Claims above this are related
