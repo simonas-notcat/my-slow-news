@@ -5,6 +5,11 @@ interface QueryResult {
   params: Record<string, unknown>;
 }
 
+interface StanceConditionResult {
+  condition: string | null;
+  params: Record<string, unknown>;
+}
+
 export function buildClaimsQuery(
   filters: FilterState,
   limit: number,
@@ -34,9 +39,10 @@ export function buildClaimsQuery(
   }
 
   // Stance filter - handled separately in subquery
-  const stanceCondition = buildStanceCondition(filters.stanceFilter);
-  if (stanceCondition) {
-    conditions.push(stanceCondition);
+  const stanceResult = buildStanceCondition(filters.stanceFilter);
+  if (stanceResult.condition) {
+    conditions.push(stanceResult.condition);
+    Object.assign(params, stanceResult.params);
   }
 
   const whereClause =
@@ -82,9 +88,10 @@ export function buildCountQuery(filters: FilterState): QueryResult {
     params.subject = filters.subject;
   }
 
-  const stanceCondition = buildStanceCondition(filters.stanceFilter);
-  if (stanceCondition) {
-    conditions.push(stanceCondition);
+  const stanceResult = buildStanceCondition(filters.stanceFilter);
+  if (stanceResult.condition) {
+    conditions.push(stanceResult.condition);
+    Object.assign(params, stanceResult.params);
   }
 
   const whereClause =
@@ -97,19 +104,28 @@ export function buildCountQuery(filters: FilterState): QueryResult {
 
 function buildStanceCondition(
   stanceFilter: FilterState["stanceFilter"]
-): string | null {
+): StanceConditionResult {
   switch (stanceFilter) {
     case "unrated":
-      return "array::len((SELECT id FROM claim_stances WHERE claim = $parent.id AND user_stance != NONE)) = 0";
+      return {
+        condition: "array::len((SELECT id FROM claim_stances WHERE claim = $parent.id AND user_stance != NONE)) = 0",
+        params: {},
+      };
     case "rated":
-      return "array::len((SELECT id FROM claim_stances WHERE claim = $parent.id AND user_stance != NONE)) > 0";
+      return {
+        condition: "array::len((SELECT id FROM claim_stances WHERE claim = $parent.id AND user_stance != NONE)) > 0",
+        params: {},
+      };
     case "agrees":
     case "disagrees":
     case "neutral":
     case "uncertain":
-      return `(SELECT user_stance FROM claim_stances WHERE claim = $parent.id LIMIT 1)[0].user_stance = '${stanceFilter}'`;
+      return {
+        condition: "(SELECT user_stance FROM claim_stances WHERE claim = $parent.id LIMIT 1)[0].user_stance = $stanceFilter",
+        params: { stanceFilter },
+      };
     default:
-      return null;
+      return { condition: null, params: {} };
   }
 }
 

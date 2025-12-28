@@ -3,6 +3,8 @@ import React, {
   useContext,
   useEffect,
   useState,
+  useRef,
+  useCallback,
   ReactNode,
 } from "react";
 import Surreal from "surrealdb";
@@ -30,7 +32,10 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
-  const connect = async () => {
+  // Use ref to track current connection for cleanup
+  const dbRef = useRef<Surreal | null>(null);
+
+  const connect = useCallback(async () => {
     try {
       setError(null);
       const surreal = new Surreal();
@@ -39,25 +44,29 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({
         namespace: config.database.namespace,
         database: config.database.database,
       });
+      dbRef.current = surreal;
       setDb(surreal);
       setIsConnected(true);
     } catch (err) {
       setError(err as Error);
       setIsConnected(false);
     }
-  };
+  }, [config.database.url, config.database.namespace, config.database.database]);
 
   useEffect(() => {
     connect();
     return () => {
-      db?.close();
+      // Use ref to get current connection, not stale closure value
+      dbRef.current?.close();
+      dbRef.current = null;
     };
-  }, []);
+  }, [connect]);
 
-  const reconnect = async () => {
-    await db?.close();
+  const reconnect = useCallback(async () => {
+    await dbRef.current?.close();
+    dbRef.current = null;
     await connect();
-  };
+  }, [connect]);
 
   return (
     <DatabaseContext.Provider value={{ db, isConnected, error, reconnect }}>
