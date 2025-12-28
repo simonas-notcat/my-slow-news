@@ -57,11 +57,15 @@ export const ConfigSchema = z.object({
     blocked_domains: z.array(z.string()).optional().default([]),
   }).optional().default({}),
   // Embedding configuration for semantic features
+  // Note: YAML uses snake_case, TypeScript uses camelCase (converted on load)
   embeddings: z.object({
     provider: z.enum(["openai", "ollama"]).default("openai"),
     model: z.string().default("text-embedding-3-small"),
+    // OpenAI text-embedding-3-small supports: 512, 1536, 3072
+    // Ollama nomic-embed-text uses 768 dimensions
     dimensions: z.number().default(1536),
     cache_enabled: z.boolean().default(true),
+    cache_size: z.number().default(10000),
     batch_size: z.number().default(100),
     openai: z.object({
       api_key_env: z.string().default("OPENAI_API_KEY"),

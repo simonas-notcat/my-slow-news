@@ -12,28 +12,29 @@ export interface OllamaProviderConfig {
 }
 
 /**
- * Simple concurrency limiter for parallel requests
+ * Concurrency limiter for parallel requests.
+ * Pre-assigns indices to workers to avoid race conditions.
  */
 async function withConcurrencyLimit<T>(
   tasks: (() => Promise<T>)[],
   limit: number
 ): Promise<T[]> {
   const results: T[] = new Array(tasks.length);
-  let currentIndex = 0;
 
-  async function runNext(): Promise<void> {
-    while (currentIndex < tasks.length) {
-      const index = currentIndex++;
+  // Pre-assign indices to each worker to avoid shared mutable state
+  const chunks: number[][] = Array.from({ length: limit }, () => []);
+  for (let i = 0; i < tasks.length; i++) {
+    chunks[i % limit].push(i);
+  }
+
+  async function runWorker(indices: number[]): Promise<void> {
+    for (const index of indices) {
       results[index] = await tasks[index]();
     }
   }
 
-  // Start 'limit' number of workers
-  const workers = Array(Math.min(limit, tasks.length))
-    .fill(null)
-    .map(() => runNext());
-
-  await Promise.all(workers);
+  // Start workers with their pre-assigned indices
+  await Promise.all(chunks.map((indices) => runWorker(indices)));
   return results;
 }
 

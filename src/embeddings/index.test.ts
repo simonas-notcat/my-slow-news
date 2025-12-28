@@ -99,6 +99,14 @@ describe("EmbeddingService", () => {
           })
       ).toThrow("Unknown embedding provider");
     });
+
+    test("uses custom cache size", () => {
+      const service = new EmbeddingService({
+        ...openaiConfig,
+        cacheSize: 500,
+      });
+      expect(service.name).toBe("openai");
+    });
   });
 
   describe("embed()", () => {
@@ -137,6 +145,22 @@ describe("EmbeddingService", () => {
       await service.embed("test text");
 
       expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
+    test("throws for empty text", async () => {
+      const service = new EmbeddingService(openaiConfig);
+
+      await expect(service.embed("")).rejects.toThrow(
+        "Text must be a non-empty string"
+      );
+    });
+
+    test("throws for non-string input", async () => {
+      const service = new EmbeddingService(openaiConfig);
+
+      await expect(
+        service.embed(null as unknown as string)
+      ).rejects.toThrow("Text must be a non-empty string");
     });
   });
 
@@ -219,6 +243,38 @@ describe("EmbeddingService", () => {
       expect(results).toHaveLength(3);
       expect(mockFetch).toHaveBeenCalledTimes(2); // Two batches
     });
+
+    test("returns empty array for empty input", async () => {
+      const service = new EmbeddingService(openaiConfig);
+      const results = await service.embedBatch([]);
+
+      expect(results).toEqual([]);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    test("throws for non-array input", async () => {
+      const service = new EmbeddingService(openaiConfig);
+
+      await expect(
+        service.embedBatch("not-an-array" as unknown as string[])
+      ).rejects.toThrow("Texts must be an array");
+    });
+
+    test("throws for empty string in array", async () => {
+      const service = new EmbeddingService(openaiConfig);
+
+      await expect(service.embedBatch(["valid", ""])).rejects.toThrow(
+        "Text at index 1 must be a non-empty string"
+      );
+    });
+
+    test("throws for null element in array", async () => {
+      const service = new EmbeddingService(openaiConfig);
+
+      await expect(
+        service.embedBatch(["valid", null as unknown as string])
+      ).rejects.toThrow("Text at index 1 must be a non-empty string");
+    });
   });
 
   describe("singleton", () => {
@@ -235,6 +291,43 @@ describe("EmbeddingService", () => {
       const service2 = getEmbeddingService(openaiConfig);
 
       expect(service1).not.toBe(service2);
+    });
+
+    test("throws when called with different provider", () => {
+      getEmbeddingService(openaiConfig);
+
+      expect(() => getEmbeddingService(ollamaConfig)).toThrow(
+        /singleton already initialized with different config/
+      );
+    });
+
+    test("throws when called with different model", () => {
+      getEmbeddingService(openaiConfig);
+
+      expect(() =>
+        getEmbeddingService({
+          ...openaiConfig,
+          model: "text-embedding-3-large",
+        })
+      ).toThrow(/singleton already initialized with different config/);
+    });
+
+    test("throws when called with different dimensions", () => {
+      getEmbeddingService(openaiConfig);
+
+      expect(() =>
+        getEmbeddingService({
+          ...openaiConfig,
+          dimensions: 512,
+        })
+      ).toThrow(/singleton already initialized with different config/);
+    });
+
+    test("allows same config to be passed multiple times", () => {
+      const service1 = getEmbeddingService(openaiConfig);
+      const service2 = getEmbeddingService({ ...openaiConfig }); // Same values, different object
+
+      expect(service1).toBe(service2);
     });
   });
 });

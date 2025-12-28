@@ -15,10 +15,11 @@ export class EmbeddingCache {
   }
 
   private hash(text: string): string {
-    return createHash("sha256").update(text).digest("hex").slice(0, 16);
+    // Use full SHA-256 hash (64 hex chars) to avoid collision risk
+    return createHash("sha256").update(text).digest("hex");
   }
 
-  async get(text: string): Promise<number[] | null> {
+  get(text: string): number[] | null {
     const key = this.hash(text);
     const value = this.cache.get(key);
 
@@ -32,7 +33,7 @@ export class EmbeddingCache {
     return null;
   }
 
-  async set(text: string, embedding: number[]): Promise<void> {
+  set(text: string, embedding: number[]): void {
     const key = this.hash(text);
 
     // If key exists, delete first to update insertion order

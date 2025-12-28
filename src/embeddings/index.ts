@@ -11,6 +11,8 @@ import { OpenAIEmbeddingProvider } from "./providers/openai";
 import { OllamaEmbeddingProvider } from "./providers/ollama";
 import { EmbeddingCache } from "./cache";
 
+const DEFAULT_CACHE_SIZE = 10000;
+
 export class EmbeddingService {
   private provider: EmbeddingProvider;
   private cache: EmbeddingCache | null;
@@ -18,7 +20,9 @@ export class EmbeddingService {
 
   constructor(config: EmbeddingConfig) {
     this.provider = this.createProvider(config);
-    this.cache = config.cacheEnabled ? new EmbeddingCache() : null;
+    this.cache = config.cacheEnabled
+      ? new EmbeddingCache(config.cacheSize ?? DEFAULT_CACHE_SIZE)
+      : null;
     this.batchSize = config.batchSize;
   }
 
@@ -41,9 +45,14 @@ export class EmbeddingService {
   }
 
   async embed(text: string): Promise<EmbeddingResult> {
+    // Validate input
+    if (!text || typeof text !== "string") {
+      throw new Error("Text must be a non-empty string");
+    }
+
     // Check cache first
     if (this.cache) {
-      const cached = await this.cache.get(text);
+      const cached = this.cache.get(text);
       if (cached) {
         return {
           text,
@@ -58,13 +67,26 @@ export class EmbeddingService {
 
     // Store in cache
     if (this.cache) {
-      await this.cache.set(text, embedding);
+      this.cache.set(text, embedding);
     }
 
     return { text, embedding, model: this.provider.name, cached: false };
   }
 
   async embedBatch(texts: string[]): Promise<EmbeddingResult[]> {
+    // Validate input
+    if (!Array.isArray(texts)) {
+      throw new Error("Texts must be an array");
+    }
+    if (texts.length === 0) {
+      return [];
+    }
+    for (let i = 0; i < texts.length; i++) {
+      if (!texts[i] || typeof texts[i] !== "string") {
+        throw new Error(`Text at index ${i} must be a non-empty string`);
+      }
+    }
+
     // Pre-initialize results array to avoid sparse array issues
     const results: EmbeddingResult[] = new Array(texts.length);
     const uncached: { text: string; index: number }[] = [];
@@ -72,7 +94,7 @@ export class EmbeddingService {
     // Check cache for each text
     for (let i = 0; i < texts.length; i++) {
       if (this.cache) {
-        const cached = await this.cache.get(texts[i]);
+        const cached = this.cache.get(texts[i]);
         if (cached) {
           results[i] = {
             text: texts[i],
@@ -105,7 +127,7 @@ export class EmbeddingService {
         };
 
         if (this.cache) {
-          await this.cache.set(text, embedding);
+          this.cache.set(text, embedding);
         }
       }
     }
@@ -123,18 +145,43 @@ export class EmbeddingService {
   }
 }
 
-// Singleton instance
+// Singleton instance and its config for validation
 let embeddingService: EmbeddingService | null = null;
+let singletonConfig: EmbeddingConfig | null = null;
 
+/**
+ * Get or create the singleton embedding service.
+ *
+ * Note: Config is only used on the first call. Subsequent calls return
+ * the existing instance. Call resetEmbeddingService() to reconfigure.
+ *
+ * @throws Error if called with different config than the existing instance
+ */
 export function getEmbeddingService(config: EmbeddingConfig): EmbeddingService {
   if (!embeddingService) {
     embeddingService = new EmbeddingService(config);
+    singletonConfig = config;
+  } else if (singletonConfig) {
+    // Validate that config matches existing instance
+    if (
+      config.provider !== singletonConfig.provider ||
+      config.model !== singletonConfig.model ||
+      config.dimensions !== singletonConfig.dimensions
+    ) {
+      throw new Error(
+        `EmbeddingService singleton already initialized with different config. ` +
+          `Existing: ${singletonConfig.provider}/${singletonConfig.model}, ` +
+          `Requested: ${config.provider}/${config.model}. ` +
+          `Call resetEmbeddingService() first to reconfigure.`
+      );
+    }
   }
   return embeddingService;
 }
 
 export function resetEmbeddingService(): void {
   embeddingService = null;
+  singletonConfig = null;
 }
 
 // Re-export types
