@@ -287,11 +287,22 @@ const summarizeStep = createStep({
           // Use Chain-of-Thought summarization for controversial posts
           console.log(`  [COT] Using chain-of-thought for controversial post: ${post.title.slice(0, 50)}...`);
 
+          // COT prompt includes ~2000 chars template + 15 selected comments (400 chars each)
+          // Estimate: template (2000) + post content + 15 comments × 400 chars
+          const cotPromptOverhead = 2000;
+          const cotCommentsEstimate = Math.min(comments.length, 15) * 400;
+          const cotInputTokens = estimateTokens(post.selftext + post.title) + estimateTokens(String(cotPromptOverhead + cotCommentsEstimate));
+          const cotOutputEstimate = 1500; // COT responses are typically longer
+
+          const budgetCheck = checkBudget(cotInputTokens, cotOutputEstimate, config.llm.daily_budget_usd);
+          if (!budgetCheck.allowed) {
+            throw new BudgetExceededError(budgetCheck.remainingBudget, budgetCheck.estimatedCost);
+          }
+
           const cotResult = await cotSummarize(agent, post, comments, controversyResult);
 
-          // Record usage estimate
-          const estimatedTokens = estimateTokens(post.selftext + comments.map((c: RedditComment) => c.body).join(" "));
-          recordUsage(estimatedTokens, estimateTokens(cotResult.summary));
+          // Record actual usage with accurate estimate
+          recordUsage(cotInputTokens, estimateTokens(cotResult.summary));
 
           normalizedSummary = {
             summary: cotResult.summary,
@@ -314,11 +325,24 @@ const summarizeStep = createStep({
           // Use hierarchical summarization for posts with many comments
           console.log(`  [Hierarchical] Using thread-based summarization for: ${post.title.slice(0, 50)}...`);
 
+          // Hierarchical makes multiple LLM calls: ~5 thread summaries + 1 synthesis
+          // Estimate: 6 calls × (prompt template ~500 + thread content ~1000) = ~9000 tokens input
+          // Plus ~300 tokens output per call = ~1800 tokens output
+          const estimatedThreadCount = Math.min(5, Math.ceil(comments.length / 10));
+          const hierarchicalInputEstimate = estimatedThreadCount * 1500 + 1000; // thread prompts + synthesis prompt
+          const hierarchicalOutputEstimate = estimatedThreadCount * 300 + 500; // thread summaries + synthesis
+
+          const budgetCheck = checkBudget(hierarchicalInputEstimate, hierarchicalOutputEstimate, config.llm.daily_budget_usd);
+          if (!budgetCheck.allowed) {
+            throw new BudgetExceededError(budgetCheck.remainingBudget, budgetCheck.estimatedCost);
+          }
+
           const hierarchicalResult = await hierarchicalSummarize(agent, post, comments);
 
-          // Record usage estimate
-          const estimatedTokens = estimateTokens(post.selftext + comments.map((c: RedditComment) => c.body).join(" "));
-          recordUsage(estimatedTokens, estimateTokens(hierarchicalResult.synthesizedSummary));
+          // Record actual usage with accurate estimate
+          const actualThreadCount = hierarchicalResult.threadSummaries.length;
+          const actualInputTokens = actualThreadCount * 1500 + 1000;
+          recordUsage(actualInputTokens, estimateTokens(hierarchicalResult.synthesizedSummary));
 
           const formattedSummary = formatThreadSummariesForDigest(hierarchicalResult);
 
@@ -351,6 +375,8 @@ const summarizeStep = createStep({
               const linkContent = await fetchLinkContent(post.url, {
                 timeout: linkFetchingConfig.timeout_ms ?? 5000,
                 maxLength: linkFetchingConfig.max_content_length ?? 5000,
+                allowedDomains: linkFetchingConfig.allowed_domains ?? [],
+                blockedDomains: linkFetchingConfig.blocked_domains ?? [],
               });
               linkContentText = formatLinkContentForPrompt(linkContent, 1500);
             } catch (e) {
