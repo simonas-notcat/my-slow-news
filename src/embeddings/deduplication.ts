@@ -296,7 +296,11 @@ export class ClaimDeduplicationService {
 
         processed += batch.length;
       } catch (error) {
-        console.error(`Error embedding batch at ${i}:`, error);
+        const claimIds = batch.map((c) => c.id).join(", ");
+        console.error(
+          `Error embedding batch at index ${i} (claims: ${claimIds}):`,
+          error,
+        );
         errors += batch.length;
       }
 
@@ -519,46 +523,55 @@ export class ClaimDeduplicationService {
     let stanceConflicts = 0;
 
     if (mergeStances) {
-      // Find stances on duplicate claim that would conflict with canonical
-      // A conflict occurs when the same user has stances on both claims
-      const [conflictingStances] = await this.db.query<
-        [Array<{ id: string }>]
+      // Check if canonical claim already has a user stance
+      // (conflict = both claims have user stances)
+      const [canonicalStances] = await this.db.query<
+        [Array<{ id: string; user_stance: string | null }>]
       >(
-        `
-        SELECT id FROM claim_stances
-        WHERE claim = $duplicate
-          AND user_stance IS NOT NONE
-          AND (SELECT id FROM claim_stances
-               WHERE claim = $canonical
-                 AND user_stance IS NOT NONE) CONTAINS id
-        `,
-        {
-          duplicate: duplicateId,
-          canonical: canonicalId,
-        },
+        `SELECT id, user_stance FROM claim_stances WHERE claim = $canonical`,
+        { canonical: canonicalId },
       );
 
-      stanceConflicts = conflictingStances.length;
-
-      // Move only non-conflicting stances from duplicate to canonical
-      // Stances without user_stance (only community data) are always moved
-      const [movedResult] = await this.db.query<[Array<{ count: number }>]>(
-        `
-        UPDATE claim_stances SET claim = $canonical
-        WHERE claim = $duplicate
-          AND (user_stance IS NONE
-               OR id NOT IN (SELECT id FROM claim_stances
-                             WHERE claim = $canonical
-                               AND user_stance IS NOT NONE))
-        RETURN { count: count() }
-        `,
-        {
-          duplicate: duplicateId,
-          canonical: canonicalId,
-        },
+      const [duplicateStances] = await this.db.query<
+        [Array<{ id: string; user_stance: string | null }>]
+      >(
+        `SELECT id, user_stance FROM claim_stances WHERE claim = $duplicate`,
+        { duplicate: duplicateId },
       );
 
-      stancesMoved = movedResult[0]?.count ?? 0;
+      const canonicalHasUserStance = canonicalStances.some(
+        (s) => s.user_stance != null,
+      );
+      const duplicateHasUserStance = duplicateStances.some(
+        (s) => s.user_stance != null,
+      );
+
+      // Count conflicts: both have user stances
+      if (canonicalHasUserStance && duplicateHasUserStance) {
+        stanceConflicts = duplicateStances.filter(
+          (s) => s.user_stance != null,
+        ).length;
+      }
+
+      // Move stances that don't conflict:
+      // - All stances if canonical has no user stance
+      // - Only non-user stances if canonical already has user stance
+      if (!canonicalHasUserStance) {
+        // Safe to move all stances from duplicate
+        const [movedResult] = await this.db.query<[Array<{ id: string }>]>(
+          `UPDATE claim_stances SET claim = $canonical WHERE claim = $duplicate`,
+          { duplicate: duplicateId, canonical: canonicalId },
+        );
+        stancesMoved = movedResult.length;
+      } else {
+        // Only move stances without user_stance (community data only)
+        const [movedResult] = await this.db.query<[Array<{ id: string }>]>(
+          `UPDATE claim_stances SET claim = $canonical
+           WHERE claim = $duplicate AND user_stance IS NONE`,
+          { duplicate: duplicateId, canonical: canonicalId },
+        );
+        stancesMoved = movedResult.length;
+      }
     }
 
     return {

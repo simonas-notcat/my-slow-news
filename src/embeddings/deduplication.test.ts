@@ -597,9 +597,12 @@ describe("ClaimDeduplicationService", () => {
         ) // SELECT both claims
         .mockImplementationOnce(() => Promise.resolve([[]])) // UPDATE duplicate
         .mockImplementationOnce(() => Promise.resolve([[]])) // RELATE
-        .mockImplementationOnce(() => Promise.resolve([[]])) // SELECT conflicting stances
+        .mockImplementationOnce(() => Promise.resolve([[]])) // SELECT canonical stances (none)
         .mockImplementationOnce(() =>
-          Promise.resolve([[{ count: 2 }]]),
+          Promise.resolve([[{ id: "stance:1" }, { id: "stance:2" }]]),
+        ) // SELECT duplicate stances
+        .mockImplementationOnce(() =>
+          Promise.resolve([[{ id: "stance:1" }, { id: "stance:2" }]]),
         ); // UPDATE stances (moved 2)
 
       const service = new ClaimDeduplicationService(
@@ -720,11 +723,19 @@ describe("ClaimDeduplicationService", () => {
         .mockImplementationOnce(() => Promise.resolve([[]])) // UPDATE duplicate
         .mockImplementationOnce(() => Promise.resolve([[]])) // RELATE
         .mockImplementationOnce(() =>
-          Promise.resolve([[{ id: "stance:1" }, { id: "stance:2" }]]),
-        ) // SELECT conflicting stances (2 conflicts)
+          Promise.resolve([[{ id: "stance:c1", user_stance: "agree" }]]),
+        ) // SELECT canonical stances (has user stance)
         .mockImplementationOnce(() =>
-          Promise.resolve([[{ count: 1 }]]),
-        ); // UPDATE stances (moved 1)
+          Promise.resolve([
+            [
+              { id: "stance:d1", user_stance: "disagree" },
+              { id: "stance:d2", user_stance: null },
+            ],
+          ]),
+        ) // SELECT duplicate stances (one user, one community)
+        .mockImplementationOnce(() =>
+          Promise.resolve([[{ id: "stance:d2" }]]),
+        ); // UPDATE stances (moved only community stance)
 
       const service = new ClaimDeduplicationService(
         mockDb,
@@ -738,8 +749,8 @@ describe("ClaimDeduplicationService", () => {
       );
 
       expect(result.merged).toBe(true);
-      expect(result.stancesMoved).toBe(1);
-      expect(result.stanceConflicts).toBe(2);
+      expect(result.stancesMoved).toBe(1); // Only community stance moved
+      expect(result.stanceConflicts).toBe(1); // One user stance conflict
     });
   });
 });
