@@ -6,7 +6,8 @@
   "scripts": {
     "digest": "bun run src/cli/digest.ts",
     "stance": "bun run src/cli/stance.ts",
-    "query": "bun run src/cli/query.ts",
+    "query": "bun run src/cli/explorer/index.tsx",
+    "query:legacy": "bun run src/cli/query.ts",
     "predicates": "bun run src/cli/predicates.ts",
     "db:init": "bun run src/db/init.ts",
     "dev": "bun run --watch src/index.ts",
@@ -17,7 +18,12 @@
   "dependencies": {
     "@mastra/core": "^0.24.9",
     "commander": "^13.0.0",
+    "ink": "^5.2.1",
+    "ink-select-input": "^6.2.0",
+    "ink-spinner": "^5.0.0",
+    "ink-text-input": "^6.0.0",
     "linkedom": "^0.18.0",
+    "react": "^18.3.1",
     "rss-parser": "^3.13.0",
     "surrealdb": "^1.0.0",
     "yaml": "^2.7.0",
@@ -25,6 +31,8 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "@types/react": "^18.3.27",
+    "ink-testing-library": "^4.0.0",
     "typescript": "^5.7.0"
   }
 }
