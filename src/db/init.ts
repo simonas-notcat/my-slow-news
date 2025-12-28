@@ -53,7 +53,9 @@ async function initializeDatabase() {
   if (vectorSchemaApplied) {
     console.log("Vector schema already applied, skipping migration");
   } else {
-    await migrateVectorSchema(db);
+    // Use configured embedding dimensions for vector index
+    const dimensions = config.embeddings?.dimensions ?? 1536;
+    await migrateVectorSchema(db, dimensions);
   }
 
   // Verify tables exist

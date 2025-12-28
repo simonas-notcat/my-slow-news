@@ -1,5 +1,8 @@
 import type Surreal from "surrealdb";
-import { VECTOR_SCHEMA, VECTOR_INDEX_SCHEMA } from "../schema";
+import { VECTOR_SCHEMA, getVectorIndexSchema } from "../schema";
+
+/** Default embedding dimensions (OpenAI text-embedding-3-small) */
+const DEFAULT_DIMENSIONS = 1536;
 
 /**
  * Migration 001: Add vector schema for semantic features
@@ -9,9 +12,16 @@ import { VECTOR_SCHEMA, VECTOR_INDEX_SCHEMA } from "../schema";
  * - Canonical claim tracking fields (canonical_claim, is_canonical)
  * - claim_similarity relation table for tracking duplicates/related claims
  * - Vector index on claim embeddings (optional, may fail on older SurrealDB versions)
+ *
+ * @param db - SurrealDB connection
+ * @param dimensions - Embedding vector dimensions (default: 1536 for OpenAI, use 768 for Ollama)
  */
-export async function migrateVectorSchema(db: Surreal): Promise<void> {
+export async function migrateVectorSchema(
+  db: Surreal,
+  dimensions: number = DEFAULT_DIMENSIONS,
+): Promise<void> {
   console.log("Applying vector schema migration...");
+  console.log(`  Using embedding dimensions: ${dimensions}`);
 
   try {
     // Apply core vector schema (fields and relations)
@@ -20,7 +30,8 @@ export async function migrateVectorSchema(db: Surreal): Promise<void> {
 
     // Try to apply vector index (may fail on older SurrealDB versions)
     try {
-      await db.query(VECTOR_INDEX_SCHEMA);
+      const vectorIndexSchema = getVectorIndexSchema(dimensions);
+      await db.query(vectorIndexSchema);
       console.log("  Vector index applied");
     } catch (indexError) {
       // Vector index syntax varies between SurrealDB versions
@@ -74,8 +85,12 @@ export async function isVectorSchemaApplied(db: Surreal): Promise<boolean> {
     const hasIsCanonicalField = "is_canonical" in fields;
 
     return hasEmbeddingField && hasIsCanonicalField;
-  } catch {
-    // Table or fields don't exist
+  } catch (error) {
+    // Table or fields don't exist - log for debugging
+    console.debug(
+      "Vector schema check failed (this is expected on first run):",
+      error instanceof Error ? error.message : String(error),
+    );
     return false;
   }
 }

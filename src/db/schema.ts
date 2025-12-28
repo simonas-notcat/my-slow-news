@@ -120,12 +120,16 @@ DEFINE INDEX idx_claim_is_canonical ON claim FIELDS is_canonical;
 `;
 
 /**
- * Vector index for similarity search.
+ * Generate vector index schema for similarity search.
  * Note: SurrealDB vector index syntax may vary by version.
  * This uses SurrealDB 2.x syntax with MTREE.
+ *
+ * @param dimensions - Number of dimensions in the embedding vectors (e.g., 1536 for OpenAI, 768 for Ollama)
  */
-export const VECTOR_INDEX_SCHEMA = `
+export function getVectorIndexSchema(dimensions: number): string {
+  return `
 -- Vector index for similarity search (SurrealDB 2.x syntax)
 DEFINE INDEX idx_claim_embedding ON claim FIELDS embedding
-  MTREE DIMENSION 1536 DIST COSINE TYPE F32;
+  MTREE DIMENSION ${dimensions} DIST COSINE TYPE F32;
 `;
+}
