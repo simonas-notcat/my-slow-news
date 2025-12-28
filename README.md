@@ -8,6 +8,7 @@ Instead of consuming news in real-time, My Slow News creates thoughtful daily su
 
 - **Daily Digests**: Automated summaries of top Reddit posts from your configured subreddits
 - **Knowledge Extraction**: AI extracts factual claims as RDF-style triples (subject, predicate, object)
+- **Interactive Explorer**: Terminal-based UI with vim-style navigation, filtering, and inline stance recording
 - **Stance Tracking**: Record and track your opinions on claims over time
 - **Knowledge Graph**: Build a personal knowledge base stored in SurrealDB
 - **No Authentication**: Uses RSS feeds and web scraping - no Reddit API credentials needed
@@ -126,17 +127,54 @@ bun run digest -d 2025-01-15
 bun run digest --from 2025-01-01 --to 2025-01-07
 ```
 
-### Knowledge Base Queries
+### Interactive Data Explorer
+
+The interactive CLI explorer provides a rich terminal UI for browsing your knowledge base:
+
+```bash
+# Launch interactive explorer
+bun run query
+
+# Start with filters pre-applied
+bun run query -d 7               # Last 7 days
+bun run query -s Rust            # Filter by subject
+bun run query -p is-better-than  # Filter by predicate
+```
+
+**Keyboard Shortcuts:**
+
+| Key | Action |
+|-----|--------|
+| `↑/k`, `↓/j` | Navigate claims |
+| `←/h`, `→/l` | Previous/next page |
+| `Enter` | View claim details |
+| `s` | Quick stance (agree/disagree/neutral/uncertain) |
+| `f` | Open filter panel |
+| `r` | Reset filters |
+| `?` | Show help |
+| `q` | Quit |
+
+**In Detail View:**
+
+| Key | Action |
+|-----|--------|
+| `a/d/n/u` | Set stance (agree/disagree/neutral/uncertain) |
+| `e` | Edit note |
+| `Esc` | Go back |
+
+### Legacy Query Commands
+
+The original non-interactive query commands are still available:
 
 ```bash
 # Query claims containing a subject
-bun run query claims -s "Rust" -d 30
+bun run query:legacy claims -s "Rust" -d 30
 
 # Find recurring themes
-bun run query themes programming -d 30
+bun run query:legacy themes programming -d 30
 
 # View your recorded stances
-bun run query my-stances
+bun run query:legacy my-stances
 ```
 
 ### Stance Recording
@@ -260,6 +298,15 @@ link_fetching:
 src/
 ├── agents/           # AI agents (summarizer, extractor)
 ├── cli/              # CLI commands
+│   ├── digest.ts     # Digest generation
+│   ├── stance.ts     # Stance recording
+│   ├── predicates.ts # Predicate management
+│   └── explorer/     # Interactive terminal UI (Ink-based)
+│       ├── components/   # UI components
+│       ├── screens/      # Full-screen views
+│       ├── context/      # React context providers
+│       ├── hooks/        # Custom React hooks
+│       └── utils/        # Query builders, formatters
 ├── config/           # Configuration loading
 ├── db/               # SurrealDB schema and connection
 ├── sources/

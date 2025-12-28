@@ -20,6 +20,7 @@ This file provides guidance for AI assistants working with this codebase.
 - **LLM**: Anthropic Claude (anthropic/claude-sonnet-4-20250514)
 - **Database**: SurrealDB (graph database)
 - **CLI**: Commander.js
+- **Interactive CLI**: Ink (React for CLI) with ink-select-input, ink-text-input, ink-spinner
 - **Validation**: Zod
 - **Config**: YAML
 
@@ -36,9 +37,18 @@ src/
 │       └── summarize.ts        # Digest save tool
 ├── cli/               # CLI commands
 │   ├── digest.ts      # Generate daily digest
-│   ├── query.ts       # Query knowledge base
+│   ├── query.ts       # Query knowledge base (legacy)
 │   ├── stance.ts      # Record user stances
-│   └── predicates.ts  # View predicate ontology
+│   ├── predicates.ts  # View predicate ontology
+│   └── explorer/      # Interactive CLI data explorer (Ink-based)
+│       ├── index.tsx      # Entry point
+│       ├── App.tsx        # Root component
+│       ├── components/    # UI components (Header, Footer, ClaimsList, etc.)
+│       ├── screens/       # Full-screen views (ClaimsListScreen, ClaimDetailScreen, FilterScreen)
+│       ├── context/       # React context (AppContext, DatabaseContext)
+│       ├── hooks/         # Custom hooks (useClaims, useKeyboard, useClaimDetail)
+│       ├── utils/         # Query builders, formatters, stance operations
+│       └── types.ts       # Explorer-specific types
 ├── config/            # Configuration loading
 │   └── index.ts       # YAML config parser
 ├── db/                # Database layer
@@ -93,14 +103,16 @@ bun run digest --from 2025-01-01 --to 2025-01-07
 # Record your stance on a claim
 bun run stance "Rust is-safer-than C++" agree -n "Memory safety by default"
 
-# Query claims in knowledge base
-bun run query claims -s "Rust" -d 30
+# Interactive data explorer (new - replaces query subcommands)
+bun run query                    # Launch interactive explorer
+bun run query -d 7               # Start with 7-day filter
+bun run query -s Rust            # Pre-filter by subject
+bun run query -p is-better-than  # Pre-filter by predicate
 
-# Find recurring themes
-bun run query themes programming -d 30
-
-# View your recorded stances
-bun run query my-stances
+# Legacy query commands (deprecated, use interactive explorer instead)
+bun run query:legacy claims -s "Rust" -d 30
+bun run query:legacy themes programming -d 30
+bun run query:legacy my-stances
 
 # View predicate ontology
 bun run predicates --all
@@ -342,6 +354,9 @@ describe("my tests", () => {
 | `src/utils/retry.ts` | `src/utils/retry.test.ts` |
 | `src/utils/theme-synthesizer.ts` | `src/utils/theme-synthesizer.test.ts` |
 | `src/utils/thread-builder.ts` | `src/utils/thread-builder.test.ts` |
+| `src/cli/explorer/utils/queries.ts` | `src/cli/explorer/utils/queries.test.ts` |
+| `src/cli/explorer/utils/formatters.ts` | `src/cli/explorer/utils/formatters.test.ts` |
+| `src/cli/explorer/utils/stanceOperations.ts` | `src/cli/explorer/utils/stanceOperations.test.ts` |
 
 ## Common Tasks
 
