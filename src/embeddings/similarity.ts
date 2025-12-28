@@ -51,58 +51,55 @@ export async function findSimilarClaims(
     canonicalOnly = true,
   } = options;
 
-  // Build the WHERE clause conditions
-  const conditions = ["embedding IS NOT NONE"];
-  if (canonicalOnly) {
-    conditions.push("is_canonical = true");
-  }
-  if (excludeIds.length > 0) {
-    conditions.push("id NOT IN $excludeIds");
-  }
+  // Fetch extra results to compensate for client-side similarity filtering
+  // This ensures we can return up to 'limit' results after filtering
+  const fetchLimit = Math.ceil(limit * 1.5) + 5;
 
-  const whereClause = conditions.join(" AND ");
-
-  // SurrealDB vector similarity search using cosine similarity
+  // Use fully parameterized query with conditional logic in SurrealQL
+  // All conditions are evaluated via parameters, avoiding string interpolation
   const query = `
     SELECT
       *,
       vector::similarity::cosine(embedding, $embedding) AS similarity
     FROM claim
-    WHERE ${whereClause}
+    WHERE embedding IS NOT NONE
+      AND ($canonicalOnly = false OR is_canonical = true)
+      AND (array::len($excludeIds) = 0 OR id NOT IN $excludeIds)
+      AND vector::similarity::cosine(embedding, $embedding) >= $minSimilarity
     ORDER BY similarity DESC
-    LIMIT $limit
+    LIMIT $fetchLimit
   `;
 
   const results = await db.query<[Array<ClaimRecord & { similarity: number }>]>(
     query,
     {
       embedding,
-      limit,
+      fetchLimit,
       excludeIds,
+      canonicalOnly,
+      minSimilarity,
     },
   );
 
   const claims = results[0] || [];
 
-  // Filter by minimum similarity and map to SimilarClaim structure
-  return claims
-    .filter((r) => r.similarity >= minSimilarity)
-    .map((r) => ({
-      claim: {
-        id: r.id,
-        subject: r.subject,
-        predicate: r.predicate,
-        object: r.object,
-        confidence: r.confidence,
-        extracted_at: r.extracted_at,
-        embedding: r.embedding,
-        embedding_model: r.embedding_model,
-        embedded_at: r.embedded_at,
-        canonical_claim: r.canonical_claim,
-        is_canonical: r.is_canonical,
-      },
-      similarity: r.similarity,
-    }));
+  // Map to SimilarClaim structure and apply final limit
+  return claims.slice(0, limit).map((r) => ({
+    claim: {
+      id: r.id,
+      subject: r.subject,
+      predicate: r.predicate,
+      object: r.object,
+      confidence: r.confidence,
+      extracted_at: r.extracted_at,
+      embedding: r.embedding,
+      embedding_model: r.embedding_model,
+      embedded_at: r.embedded_at,
+      canonical_claim: r.canonical_claim,
+      is_canonical: r.is_canonical,
+    },
+    similarity: r.similarity,
+  }));
 }
 
 /**

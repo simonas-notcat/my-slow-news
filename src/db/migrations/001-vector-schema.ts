@@ -42,18 +42,40 @@ export async function migrateVectorSchema(db: Surreal): Promise<void> {
 }
 
 /**
- * Check if vector schema has already been applied by checking for the
- * existence of the is_canonical field on claim table.
+ * Check if vector schema has already been applied by checking for:
+ * 1. The claim_similarity table exists
+ * 2. The embedding field exists on claim table
+ * 3. The is_canonical field exists on claim table
  */
 export async function isVectorSchemaApplied(db: Surreal): Promise<boolean> {
   try {
     // Check if claim_similarity table exists
-    const result = await db.query<[Array<{ name: string }>]>(
+    const tableResult = await db.query<[Record<string, unknown>]>(
       "INFO FOR TABLE claim_similarity",
     );
-    return result[0] !== undefined;
+    const tableExists =
+      tableResult[0] !== undefined && Object.keys(tableResult[0]).length > 0;
+
+    if (!tableExists) {
+      return false;
+    }
+
+    // Check if embedding and is_canonical fields exist on claim table
+    const claimInfo = await db.query<[{ fd: Record<string, unknown> }]>(
+      "INFO FOR TABLE claim",
+    );
+
+    if (!claimInfo[0]?.fd) {
+      return false;
+    }
+
+    const fields = claimInfo[0].fd;
+    const hasEmbeddingField = "embedding" in fields;
+    const hasIsCanonicalField = "is_canonical" in fields;
+
+    return hasEmbeddingField && hasIsCanonicalField;
   } catch {
-    // Table doesn't exist
+    // Table or fields don't exist
     return false;
   }
 }

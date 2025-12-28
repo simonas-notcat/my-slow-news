@@ -114,6 +114,9 @@ DEFINE FIELD similarity ON claim_similarity TYPE float;
 DEFINE FIELD relationship ON claim_similarity TYPE string;
 DEFINE FIELD detected_at ON claim_similarity TYPE datetime;
 DEFINE INDEX idx_claim_similarity_rel ON claim_similarity FIELDS relationship;
+
+-- Index on is_canonical for efficient filtering of canonical claims
+DEFINE INDEX idx_claim_is_canonical ON claim FIELDS is_canonical;
 `;
 
 /**
