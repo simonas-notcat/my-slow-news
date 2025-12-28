@@ -38,6 +38,12 @@ import {
   cotSummarize,
   formatControversyAnalysisMarkdown,
 } from "../utils/cot-summarizer";
+import {
+  sanitizeMarkdown,
+  formatHumanDate,
+  slugify,
+  claimToNaturalLanguage,
+} from "../utils/digest-format";
 
 // ============================================================================
 // Workflow Schemas - Proper type definitions for step inputs/outputs
@@ -653,9 +659,36 @@ const generateDigestStep = createStep({
       bySubreddit.set(item.subreddit, list);
     }
 
-    // Generate markdown
+    // Calculate stats
+    const postCount = summaries_with_claims.length;
+    const subredditCount = bySubreddit.size;
+    const claimCount = all_claims.length;
+
+    // Generate markdown with improved header
+    const humanDate = formatHumanDate(date);
     let markdown = `# My Slow News - ${date}\n\n`;
-    markdown += `*Generated at ${new Date().toISOString()}*\n\n`;
+    markdown += `*${humanDate} • ${postCount} posts • ${subredditCount} subreddits • ${claimCount} claims extracted*\n\n`;
+
+    // Generate TL;DR section
+    if (summaries_with_claims.length > 0) {
+      markdown += `## TL;DR\n\n`;
+      for (const item of summaries_with_claims.slice(0, 5)) {
+        const sentiment = item.summary.sentiment;
+        const emoji = sentiment === "positive" ? "🔥" :
+                     sentiment === "negative" ? "⚠️" :
+                     sentiment === "mixed" ? "🔄" : "📰";
+        // Create a one-line summary from the first sentence (sanitized)
+        const firstSentence = item.summary.summary.split(/[.!?]/)[0].trim();
+        const shortSummary = sanitizeMarkdown(
+          firstSentence.length > 100 ? firstSentence.slice(0, 100) + "..." : firstSentence
+        );
+        const safeTitle = sanitizeMarkdown(
+          item.post.title.slice(0, 60) + (item.post.title.length > 60 ? "..." : "")
+        );
+        markdown += `- ${emoji} **${safeTitle}** — ${shortSummary}\n`;
+      }
+      markdown += `\n---\n\n`;
+    }
 
     // Get theme synthesis config
     const summarizationConfig = config.summarization ?? {};
@@ -691,40 +724,45 @@ const generateDigestStep = createStep({
     markdown += `---\n\n`;
 
     for (const [subreddit, items] of bySubreddit) {
-      markdown += `## r/${subreddit}\n\n`;
+      markdown += `## r/${sanitizeMarkdown(subreddit)}\n\n`;
 
       for (const item of items) {
         const { post, summary, claims } = item;
+        const slug = slugify(post.title);
+        const safeTitle = sanitizeMarkdown(post.title);
+        const safeAuthor = sanitizeMarkdown(post.author);
 
-        markdown += `### [${post.title}](${post.permalink})\n\n`;
+        markdown += `### [${safeTitle}](${post.permalink}) {#${slug}}\n\n`;
 
         // Build metadata line with quality indicators
         const confidencePct = Math.round((summary.confidence ?? 0.7) * 100);
         const controversyBadge = summary.controversy_level !== "none"
-          ? ` | **Controversy:** ${summary.controversy_level}`
+          ? ` • **Controversy:** ${summary.controversy_level}`
           : "";
         const densityIndicator = summary.information_density === "sparse" ? " ⚠️" : "";
 
-        markdown += `**Author:** u/${post.author} | **Score:** ${post.score} | **Confidence:** ${confidencePct}%${controversyBadge}${densityIndicator}\n\n`;
-        markdown += `${summary.summary}\n\n`;
+        markdown += `**u/${safeAuthor}** • Score: ${post.score} • Confidence: ${confidencePct}%${controversyBadge}${densityIndicator}\n\n`;
+        markdown += `${sanitizeMarkdown(summary.summary)}\n\n`;
 
         // Show missing context warnings
         if (summary.missing_context && summary.missing_context.length > 0) {
-          markdown += `> **Note:** Missing context: ${summary.missing_context.join(", ")}\n\n`;
+          const safeContext = summary.missing_context.map(c => sanitizeMarkdown(c)).join(", ");
+          markdown += `> ⚠️ **Missing context:** ${safeContext}\n\n`;
         }
 
-        if (summary.notable_comments?.length > 0) {
-          markdown += `**Notable Comments:**\n`;
-          for (const comment of summary.notable_comments) {
-            markdown += `- ${comment}\n`;
-          }
-          markdown += `\n`;
+        // Key topics as tags
+        if (summary.key_topics?.length > 0) {
+          markdown += `**Topics:** ${summary.key_topics.map(t => `\`${sanitizeMarkdown(t)}\``).join(" ")}\n\n`;
         }
 
+        // Claims in natural language format
         if (claims?.length > 0) {
-          markdown += `**Claims Extracted:**\n`;
-          for (const claim of claims) {
-            markdown += `- \`(${claim.subject}, ${claim.predicate}, ${claim.object})\` - ${claim.source_stance} (${Math.round(claim.confidence * 100)}% confidence)\n`;
+          markdown += `**Key Claims:**\n`;
+          for (const claim of claims.slice(0, 5)) { // Limit to top 5 claims
+            markdown += `- ${claimToNaturalLanguage(claim)}\n`;
+          }
+          if (claims.length > 5) {
+            markdown += `- *...and ${claims.length - 5} more claims*\n`;
           }
           markdown += `\n`;
         }

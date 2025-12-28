@@ -8,6 +8,7 @@
 import type { Agent } from "@mastra/core/agent";
 import { z } from "zod";
 import { parseLLMJson } from "./parse-llm-json";
+import { sanitizeMarkdown } from "./digest-format";
 
 // Types for summarized posts
 export interface PostSummaryInput {
@@ -218,6 +219,13 @@ Focus on substantive patterns. Return empty arrays if no clear patterns emerge.`
 }
 
 /**
+ * Escapes pipe characters for markdown table cells
+ */
+function escapeTableCell(text: string): string {
+  return sanitizeMarkdown(text).replace(/\|/g, "\\|");
+}
+
+/**
  * Formats theme synthesis for markdown output
  */
 export function formatThemeSynthesisMarkdown(
@@ -229,24 +237,28 @@ export function formatThemeSynthesisMarkdown(
   if (synthesis.recurring_themes.length > 0) {
     sections.push("## Today's Themes\n");
     for (const theme of synthesis.recurring_themes) {
-      sections.push(`### ${theme.theme}`);
-      sections.push(`*Discussed in: ${theme.posts.join(", ")}*\n`);
-      sections.push(theme.summary + "\n");
+      sections.push(`### ${sanitizeMarkdown(theme.theme)}\n`);
+      sections.push(sanitizeMarkdown(theme.summary) + "\n");
+      sections.push("**Discussed in:**");
+      for (const post of theme.posts) {
+        sections.push(`- ${sanitizeMarkdown(post)}`);
+      }
+      sections.push("");
     }
   }
 
-  // Conflicting viewpoints
+  // Conflicting viewpoints - table format
   if (synthesis.conflicting_viewpoints.length > 0) {
     sections.push("## Conflicting Viewpoints\n");
+    sections.push("| Topic | View A | View B |");
+    sections.push("|-------|--------|--------|");
     for (const conflict of synthesis.conflicting_viewpoints) {
-      sections.push(`### ${conflict.topic}`);
-      sections.push(
-        `- **View A** (${conflict.viewpoint_a.sources.join(", ")}): ${conflict.viewpoint_a.position}`
-      );
-      sections.push(
-        `- **View B** (${conflict.viewpoint_b.sources.join(", ")}): ${conflict.viewpoint_b.position}\n`
-      );
+      const topic = escapeTableCell(conflict.topic);
+      const viewA = escapeTableCell(conflict.viewpoint_a.position);
+      const viewB = escapeTableCell(conflict.viewpoint_b.position);
+      sections.push(`| ${topic} | ${viewA} | ${viewB} |`);
     }
+    sections.push("");
   }
 
   // Emerging trends
@@ -254,8 +266,9 @@ export function formatThemeSynthesisMarkdown(
     sections.push("## Emerging Trends\n");
     for (const trend of synthesis.emerging_trends) {
       const confidence = Math.round(trend.confidence * 100);
-      sections.push(`### ${trend.trend} (${confidence}% confidence)`);
-      sections.push(`Evidence: ${trend.evidence.join("; ")}\n`);
+      sections.push(`### ${sanitizeMarkdown(trend.trend)} (${confidence}% confidence)\n`);
+      const safeEvidence = trend.evidence.map(e => sanitizeMarkdown(e)).join("; ");
+      sections.push(`**Evidence:** ${safeEvidence}\n`);
     }
   }
 
