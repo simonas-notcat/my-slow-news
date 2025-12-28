@@ -5,6 +5,7 @@ import {
   slugify,
   claimToNaturalLanguage,
 } from "./digest-format";
+import type { ExtractedClaim } from "../types";
 
 describe("sanitizeMarkdown", () => {
   test("escapes HTML angle brackets", () => {
@@ -101,7 +102,7 @@ describe("slugify", () => {
 
 describe("claimToNaturalLanguage", () => {
   test("converts claim to readable sentence", () => {
-    const claim = {
+    const claim: ExtractedClaim = {
       subject: "TypeScript",
       predicate: "is-better-than",
       object: "JavaScript",
@@ -114,7 +115,7 @@ describe("claimToNaturalLanguage", () => {
   });
 
   test("handles kebab-case in all fields", () => {
-    const claim = {
+    const claim: ExtractedClaim = {
       subject: "Boris-Cherny",
       predicate: "completed",
       object: "full-month-production-commits",
@@ -127,7 +128,7 @@ describe("claimToNaturalLanguage", () => {
   });
 
   test("sanitizes XSS in subject", () => {
-    const claim = {
+    const claim: ExtractedClaim = {
       subject: "<script>evil</script>",
       predicate: "claims",
       object: "something",
@@ -138,7 +139,7 @@ describe("claimToNaturalLanguage", () => {
   });
 
   test("sanitizes markdown links in object", () => {
-    const claim = {
+    const claim: ExtractedClaim = {
       subject: "User",
       predicate: "shared",
       object: "[link](http://evil.com)",
@@ -149,7 +150,7 @@ describe("claimToNaturalLanguage", () => {
   });
 
   test("rounds confidence to whole percentage", () => {
-    const claim = {
+    const claim: ExtractedClaim = {
       subject: "A",
       predicate: "equals",
       object: "B",

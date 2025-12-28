@@ -4,6 +4,8 @@
  * Helper functions for generating readable digest markdown output.
  */
 
+import type { ExtractedClaim } from "../types";
+
 /**
  * Sanitizes text for safe markdown output
  * Escapes characters that could be interpreted as markdown/HTML
@@ -55,21 +57,10 @@ export function slugify(title: string): string {
 }
 
 /**
- * Claim type for natural language conversion
- */
-export interface Claim {
-  subject: string;
-  predicate: string;
-  object: string;
-  confidence: number;
-  source_stance: string;
-}
-
-/**
  * Converts a claim triple to natural language
  * Uses simple sentence construction based on predicate type
  */
-export function claimToNaturalLanguage(claim: Claim): string {
+export function claimToNaturalLanguage(claim: ExtractedClaim): string {
   const subject = sanitizeMarkdown(claim.subject.replace(/-/g, " "));
   const predicate = claim.predicate.replace(/-/g, " ");
   const object = sanitizeMarkdown(claim.object.replace(/-/g, " "));
