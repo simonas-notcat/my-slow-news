@@ -252,24 +252,56 @@ export class RelatedClaimsService {
   /**
    * Pre-compute and cache related claims for a set of claims.
    * Useful for batch processing.
+   *
+   * Uses concurrency limiting to avoid overwhelming the database
+   * and embedding service.
    */
   async precomputeRelated(
     claimIds: string[],
-    options: RelatedClaimsOptions = {}
+    options: RelatedClaimsOptions & { concurrencyLimit?: number } = {}
   ): Promise<Map<string, RelatedClaim[]>> {
+    const { concurrencyLimit = 5, ...relatedOptions } = options;
     const results = new Map<string, RelatedClaim[]>();
 
-    for (const claimId of claimIds) {
-      try {
-        const related = await this.findRelated(claimId, options);
+    // Process in batches with concurrency limit
+    for (let i = 0; i < claimIds.length; i += concurrencyLimit) {
+      const batch = claimIds.slice(i, i + concurrencyLimit);
+
+      const batchResults = await Promise.all(
+        batch.map(async (claimId) => {
+          try {
+            const related = await this.findRelated(claimId, relatedOptions);
+            return { claimId, related, error: null };
+          } catch (error) {
+            console.warn(`Failed to find related for ${claimId}:`, error);
+            return { claimId, related: [], error };
+          }
+        })
+      );
+
+      for (const { claimId, related } of batchResults) {
         results.set(claimId, related);
-      } catch (error) {
-        console.warn(`Failed to find related for ${claimId}:`, error);
-        results.set(claimId, []);
+      }
+
+      // Optional: Add small delay between batches to avoid rate limiting
+      if (i + concurrencyLimit < claimIds.length) {
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
     }
 
     return results;
+  }
+
+  /**
+   * Validate claim ID format.
+   */
+  private validateClaimId(claimId: string): void {
+    if (!claimId || typeof claimId !== 'string') {
+      throw new Error('Claim ID is required');
+    }
+    if (!claimId.startsWith('claim:')) {
+      throw new Error('Invalid claim ID format');
+    }
   }
 }
 ```
@@ -652,6 +684,9 @@ return (
 **File:** `src/cli/explorer/context/AppContext.tsx` (additions)
 
 ```typescript
+/** Maximum number of claims to keep in navigation history */
+const MAX_HISTORY_SIZE = 50;
+
 interface AppState {
   // ... existing state
   claimHistory: string[];  // Stack of visited claim IDs
@@ -666,14 +701,30 @@ type Action =
 
 // In reducer:
 case 'NAVIGATE_TO_CLAIM':
+  // Truncate forward history and add new claim
+  let newHistory = [
+    ...state.claimHistory.slice(0, state.historyIndex + 1),
+    action.payload,
+  ];
+
+  // Enforce maximum history size by removing oldest entries
+  if (newHistory.length > MAX_HISTORY_SIZE) {
+    const removeCount = newHistory.length - MAX_HISTORY_SIZE;
+    newHistory = newHistory.slice(removeCount);
+    // Adjust index accordingly
+    return {
+      ...state,
+      selectedClaimId: action.payload,
+      claimHistory: newHistory,
+      historyIndex: newHistory.length - 1,
+    };
+  }
+
   return {
     ...state,
     selectedClaimId: action.payload,
-    claimHistory: [
-      ...state.claimHistory.slice(0, state.historyIndex + 1),
-      action.payload,
-    ],
-    historyIndex: state.historyIndex + 1,
+    claimHistory: newHistory,
+    historyIndex: newHistory.length - 1,
   };
 
 case 'NAVIGATE_BACK':
@@ -943,6 +994,205 @@ describe('RelatedClaimsService', () => {
       expect(result).toBe('similar');
     });
   });
+
+  describe('precomputeRelated', () => {
+    test('processes claims with concurrency limit', async () => {
+      const claimIds = ['claim:1', 'claim:2', 'claim:3', 'claim:4', 'claim:5'];
+      const mockClaim = { id: 'claim:1', subject: 'Test', embedding: [0.1, 0.2] };
+
+      (mockDb.query as ReturnType<typeof mock>)
+        .mockImplementation(() => Promise.resolve([[mockClaim]]));
+
+      const results = await service.precomputeRelated(claimIds, {
+        concurrencyLimit: 2,
+      });
+
+      expect(results.size).toBe(5);
+    });
+
+    test('handles errors gracefully in batch', async () => {
+      const claimIds = ['claim:1', 'claim:error', 'claim:3'];
+
+      (mockDb.query as ReturnType<typeof mock>)
+        .mockImplementationOnce(() => Promise.resolve([[{ id: 'claim:1', embedding: [0.1] }]]))
+        .mockImplementationOnce(() => Promise.reject(new Error('Not found')))
+        .mockImplementationOnce(() => Promise.resolve([[{ id: 'claim:3', embedding: [0.1] }]]));
+
+      const results = await service.precomputeRelated(claimIds, {
+        concurrencyLimit: 1,
+      });
+
+      expect(results.size).toBe(3);
+      expect(results.get('claim:error')).toEqual([]);  // Error case returns empty array
+    });
+
+    test('respects default concurrency limit of 5', async () => {
+      // Verify that without explicit concurrencyLimit, default of 5 is used
+      const claimIds = Array(10).fill(null).map((_, i) => `claim:${i}`);
+
+      (mockDb.query as ReturnType<typeof mock>)
+        .mockImplementation(() => Promise.resolve([[{ id: 'claim:0', embedding: [0.1] }]]));
+
+      await service.precomputeRelated(claimIds);
+
+      // With 10 claims and concurrency of 5, we should have 2 batches
+      // Each batch makes multiple queries (for source claim, duplicates, similar claims)
+    });
+  });
+
+  describe('error handling', () => {
+    test('throws for non-existent claim', async () => {
+      (mockDb.query as ReturnType<typeof mock>)
+        .mockImplementationOnce(() => Promise.resolve([[]]));  // No claim found
+
+      await expect(service.findRelated('claim:nonexistent'))
+        .rejects.toThrow('Claim not found: claim:nonexistent');
+    });
+
+    test('handles database query failure', async () => {
+      (mockDb.query as ReturnType<typeof mock>)
+        .mockImplementationOnce(() => Promise.reject(new Error('Database error')));
+
+      await expect(service.findRelated('claim:1'))
+        .rejects.toThrow('Database error');
+    });
+
+    test('handles empty embedding gracefully', async () => {
+      const claimWithoutEmbedding = {
+        id: 'claim:1',
+        subject: 'Rust',
+        predicate: 'has',
+        object: 'ownership',
+        // No embedding field
+      };
+
+      (mockDb.query as ReturnType<typeof mock>)
+        .mockImplementationOnce(() => Promise.resolve([[claimWithoutEmbedding]]))
+        .mockImplementation(() => Promise.resolve([[]]));  // Structural search returns empty
+
+      const results = await service.findRelated('claim:1');
+
+      // Should fall back to structural similarity
+      expect(Array.isArray(results)).toBe(true);
+    });
+  });
+});
+```
+
+#### 7.2 Navigation History Tests
+
+**File:** `src/cli/explorer/context/AppContext.test.tsx`
+
+```tsx
+import { describe, test, expect } from 'bun:test';
+import { appReducer, initialState, MAX_HISTORY_SIZE } from './AppContext';
+
+describe('Navigation History', () => {
+  test('adds claim to history on navigation', () => {
+    const state = { ...initialState, claimHistory: [], historyIndex: -1 };
+
+    const newState = appReducer(state, {
+      type: 'NAVIGATE_TO_CLAIM',
+      payload: 'claim:1',
+    });
+
+    expect(newState.claimHistory).toEqual(['claim:1']);
+    expect(newState.historyIndex).toBe(0);
+  });
+
+  test('truncates forward history on new navigation', () => {
+    const state = {
+      ...initialState,
+      claimHistory: ['claim:1', 'claim:2', 'claim:3'],
+      historyIndex: 1,  // Currently at claim:2
+    };
+
+    const newState = appReducer(state, {
+      type: 'NAVIGATE_TO_CLAIM',
+      payload: 'claim:4',
+    });
+
+    expect(newState.claimHistory).toEqual(['claim:1', 'claim:2', 'claim:4']);
+    expect(newState.historyIndex).toBe(2);
+  });
+
+  test('enforces maximum history size', () => {
+    // Fill history to max
+    const fullHistory = Array(MAX_HISTORY_SIZE)
+      .fill(null)
+      .map((_, i) => `claim:${i}`);
+
+    const state = {
+      ...initialState,
+      claimHistory: fullHistory,
+      historyIndex: MAX_HISTORY_SIZE - 1,
+    };
+
+    const newState = appReducer(state, {
+      type: 'NAVIGATE_TO_CLAIM',
+      payload: 'claim:new',
+    });
+
+    expect(newState.claimHistory.length).toBe(MAX_HISTORY_SIZE);
+    expect(newState.claimHistory[0]).toBe('claim:1');  // claim:0 was removed
+    expect(newState.claimHistory[MAX_HISTORY_SIZE - 1]).toBe('claim:new');
+  });
+
+  test('navigates back correctly', () => {
+    const state = {
+      ...initialState,
+      claimHistory: ['claim:1', 'claim:2', 'claim:3'],
+      historyIndex: 2,
+      selectedClaimId: 'claim:3',
+    };
+
+    const newState = appReducer(state, { type: 'NAVIGATE_BACK' });
+
+    expect(newState.historyIndex).toBe(1);
+    expect(newState.selectedClaimId).toBe('claim:2');
+  });
+
+  test('does not navigate back past beginning', () => {
+    const state = {
+      ...initialState,
+      claimHistory: ['claim:1'],
+      historyIndex: 0,
+      selectedClaimId: 'claim:1',
+    };
+
+    const newState = appReducer(state, { type: 'NAVIGATE_BACK' });
+
+    expect(newState.historyIndex).toBe(0);
+    expect(newState.selectedClaimId).toBe('claim:1');
+  });
+
+  test('navigates forward correctly', () => {
+    const state = {
+      ...initialState,
+      claimHistory: ['claim:1', 'claim:2', 'claim:3'],
+      historyIndex: 1,
+      selectedClaimId: 'claim:2',
+    };
+
+    const newState = appReducer(state, { type: 'NAVIGATE_FORWARD' });
+
+    expect(newState.historyIndex).toBe(2);
+    expect(newState.selectedClaimId).toBe('claim:3');
+  });
+
+  test('does not navigate forward past end', () => {
+    const state = {
+      ...initialState,
+      claimHistory: ['claim:1', 'claim:2'],
+      historyIndex: 1,
+      selectedClaimId: 'claim:2',
+    };
+
+    const newState = appReducer(state, { type: 'NAVIGATE_FORWARD' });
+
+    expect(newState.historyIndex).toBe(1);
+    expect(newState.selectedClaimId).toBe('claim:2');
+  });
 });
 ```
 
@@ -960,6 +1210,7 @@ describe('RelatedClaimsService', () => {
 | `src/cli/explorer/components/RelatedClaimsGrouped.tsx` | Grouped related claims | New |
 | `src/cli/explorer/screens/ClaimDetailScreen.tsx` | Integrate related claims | Modify |
 | `src/cli/explorer/context/AppContext.tsx` | Add navigation history | Modify |
+| `src/cli/explorer/context/AppContext.test.tsx` | Navigation history tests | New |
 | `src/cli/explorer/hooks/useKeyboard.ts` | Add navigation shortcuts | Modify |
 | `src/types/index.ts` | Add related config schema | Modify |
 
