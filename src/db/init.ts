@@ -5,6 +5,10 @@ import {
   migrateVectorSchema,
   isVectorSchemaApplied,
 } from "./migrations/001-vector-schema";
+import {
+  migrateContradictionSchema,
+  isContradictionSchemaApplied,
+} from "./migrations/002-contradiction-schema";
 
 async function initializeDatabase() {
   console.log("Initializing My Slow News database...");
@@ -56,6 +60,15 @@ async function initializeDatabase() {
     // Use configured embedding dimensions for vector index
     const dimensions = config.embeddings?.dimensions ?? 1536;
     await migrateVectorSchema(db, dimensions);
+  }
+
+  // Apply contradiction schema migration
+  console.log("\nChecking contradiction schema migration...");
+  const contradictionSchemaApplied = await isContradictionSchemaApplied(db);
+  if (contradictionSchemaApplied) {
+    console.log("Contradiction schema already applied, skipping migration");
+  } else {
+    await migrateContradictionSchema(db);
   }
 
   // Verify tables exist
