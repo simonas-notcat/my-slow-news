@@ -83,6 +83,26 @@ export const ConfigSchema = z.object({
       similarity_threshold: z.number().default(0.92),
       related_threshold: z.number().default(0.75),
     }).optional().default({}),
+    // Natural language search configuration
+    search: z.object({
+      enabled: z.boolean().default(true),
+      min_similarity: z.number().default(0.5),
+      max_results: z.number().default(50),
+      // Show similarity scores in results
+      show_scores: z.boolean().default(true),
+    }).optional().default({}),
+    // Related claims discovery configuration
+    related: z.object({
+      enabled: z.boolean().default(true),
+      // Number of related claims to show
+      limit: z.number().default(6),
+      // Minimum similarity to consider related
+      min_similarity: z.number().default(0.6),
+      // Group by relationship type
+      group_by_relationship: z.boolean().default(false),
+      // Pre-compute related claims on save
+      precompute: z.boolean().default(false),
+    }).optional().default({}),
   }).optional().default({}),
 });
 
