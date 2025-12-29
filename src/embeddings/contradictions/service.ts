@@ -22,6 +22,12 @@ import type {
 /** Maximum claims for pairwise detection before warning */
 const PAIRWISE_CLAIM_LIMIT = 500;
 
+/** Default similarity threshold for finding contradiction candidates */
+const DEFAULT_MIN_SIMILARITY = 0.7;
+
+/** Minimum LLM confidence required to consider a semantic contradiction valid */
+const MIN_LLM_CONFIDENCE = 0.7;
+
 /** Default retry configuration for LLM calls */
 const LLM_RETRY_CONFIG = {
   maxRetries: 3,
@@ -55,7 +61,7 @@ export class ContradictionDetectionService {
     options: ContradictionDetectionOptions = {}
   ): Promise<ContradictionPair[]> {
     const {
-      minSimilarity = 0.7,
+      minSimilarity = DEFAULT_MIN_SIMILARITY,
       useLlmVerification = true,
       limit = 100,
       maxClaims = PAIRWISE_CLAIM_LIMIT,
@@ -135,7 +141,7 @@ export class ContradictionDetectionService {
           if (
             llmResult &&
             llmResult.isContradiction &&
-            llmResult.confidence >= 0.7
+            llmResult.confidence >= MIN_LLM_CONFIDENCE
           ) {
             contradictions.push({
               claim1: this.claimToSummary(claim1),
@@ -223,7 +229,7 @@ export class ContradictionDetectionService {
   async detectContradictionsOptimized(
     options: ContradictionDetectionOptions = {}
   ): Promise<ContradictionPair[]> {
-    const { minSimilarity = 0.7, useLlmVerification = true, limit = 100 } = options;
+    const { minSimilarity = DEFAULT_MIN_SIMILARITY, useLlmVerification = true, limit = 100 } = options;
 
     const contradictions: ContradictionPair[] = [];
     const processedPairs = new Set<string>();
@@ -300,7 +306,7 @@ export class ContradictionDetectionService {
           if (
             llmResult &&
             llmResult.isContradiction &&
-            llmResult.confidence >= 0.7
+            llmResult.confidence >= MIN_LLM_CONFIDENCE
           ) {
             contradictions.push({
               claim1: this.claimToSummary(claim),
@@ -357,13 +363,14 @@ export class ContradictionDetectionService {
         embedding IS NOT NONE
         AND is_canonical = true
         AND id != $claimId
-        AND vector::similarity::cosine(embedding, $embedding) >= 0.7
+        AND vector::similarity::cosine(embedding, $embedding) >= $minSimilarity
       ORDER BY similarity DESC
       LIMIT 50
     `,
       {
         embedding: source.embedding,
         claimId,
+        minSimilarity: DEFAULT_MIN_SIMILARITY,
       }
     );
 
@@ -398,7 +405,7 @@ export class ContradictionDetectionService {
             this.formatClaimText(candidate)
           );
 
-          if (llmResult.isContradiction && llmResult.confidence >= 0.7) {
+          if (llmResult.isContradiction && llmResult.confidence >= MIN_LLM_CONFIDENCE) {
             contradictions.push({
               claim1: this.claimToSummary(source),
               claim2: this.claimToSummary(candidate),
@@ -429,6 +436,32 @@ export class ContradictionDetectionService {
       GROUP ALL
     `);
 
+    // Get counts by contradiction type
+    const [typeStats] = await this.db.query<
+      [{ contradiction_type: string; count: number }[]]
+    >(`
+      SELECT
+        contradiction_type,
+        count() AS count
+      FROM claim_similarity
+      WHERE relationship = 'contradicts'
+      GROUP BY contradiction_type
+    `);
+
+    // Build byType record from query results
+    const byType: Record<ContradictionType, number> = {
+      direct: 0,
+      semantic: 0,
+      negation: 0,
+      comparative: 0,
+    };
+
+    for (const stat of typeStats || []) {
+      if (stat.contradiction_type && stat.contradiction_type in byType) {
+        byType[stat.contradiction_type as ContradictionType] = stat.count;
+      }
+    }
+
     const [subjectStats] = await this.db.query<
       [{ subject: string; count: number }[]]
     >(`
@@ -457,12 +490,7 @@ export class ContradictionDetectionService {
 
     return {
       totalContradictions: stats?.[0]?.total || 0,
-      byType: {
-        direct: 0,
-        semantic: 0,
-        negation: 0,
-        comparative: 0,
-      },
+      byType,
       mostContestedSubjects: subjectStats || [],
       mostContestedPredicates: predicateStats || [],
     };

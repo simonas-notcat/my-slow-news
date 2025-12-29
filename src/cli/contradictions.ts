@@ -24,6 +24,43 @@ const CLI_LIMITS = {
   maxClaims: { min: 10, max: 1000, default: 500 },
 } as const;
 
+import type { Config } from "../types";
+import type Surreal from "surrealdb";
+
+/**
+ * Initialize config and database with proper error handling.
+ */
+async function initializeDbConnection(): Promise<{
+  config: Config;
+  db: Surreal;
+}> {
+  let config: Config;
+  try {
+    config = loadConfig();
+  } catch (error) {
+    console.error(
+      "Error loading config:",
+      error instanceof Error ? error.message : error
+    );
+    console.error("Make sure config.yaml exists and is valid.");
+    process.exit(1);
+  }
+
+  let db: Surreal;
+  try {
+    db = await getDb(config);
+  } catch (error) {
+    console.error(
+      "Error connecting to database:",
+      error instanceof Error ? error.message : error
+    );
+    console.error(`Check that SurrealDB is running at ${config.database.url}`);
+    process.exit(1);
+  }
+
+  return { config, db };
+}
+
 /**
  * Validate and parse numeric option with bounds checking.
  */
@@ -91,8 +128,7 @@ program
       CLI_LIMITS.maxClaims
     );
 
-    const config = loadConfig();
-    const db = await getDb(config);
+    const { db } = await initializeDbConnection();
 
     try {
       const llmVerify = options.llm ? createContradictionVerifier() : undefined;
@@ -163,8 +199,7 @@ program
   .command("stats")
   .description("Show contradiction statistics")
   .action(async () => {
-    const config = loadConfig();
-    const db = await getDb(config);
+    const { db } = await initializeDbConnection();
 
     try {
       const service = new ContradictionDetectionService(db);
@@ -207,8 +242,7 @@ program
   .description("List stored contradictions")
   .option("-l, --limit <count>", "Number of contradictions to show", "20")
   .action(async (options) => {
-    const config = loadConfig();
-    const db = await getDb(config);
+    const { db } = await initializeDbConnection();
 
     try {
       const service = new ContradictionDetectionService(db);
@@ -251,8 +285,7 @@ program
   .option("-l, --limit <count>", "Maximum contradictions", "10")
   .option("--no-llm", "Skip LLM verification")
   .action(async (claimId, options) => {
-    const config = loadConfig();
-    const db = await getDb(config);
+    const { db } = await initializeDbConnection();
 
     try {
       const llmVerify = options.llm ? createContradictionVerifier() : undefined;

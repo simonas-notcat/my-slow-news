@@ -293,12 +293,15 @@ describe("ContradictionDetectionService", () => {
     test("returns stats with empty database", async () => {
       (mockDb.query as ReturnType<typeof mock>)
         .mockImplementationOnce(() => Promise.resolve([[]]))
+        .mockImplementationOnce(() => Promise.resolve([[]])) // typeStats
         .mockImplementationOnce(() => Promise.resolve([[]]))
         .mockImplementationOnce(() => Promise.resolve([[]]));
 
       const stats = await service.getStats();
 
       expect(stats.totalContradictions).toBe(0);
+      expect(stats.byType.direct).toBe(0);
+      expect(stats.byType.semantic).toBe(0);
       expect(stats.mostContestedSubjects).toEqual([]);
       expect(stats.mostContestedPredicates).toEqual([]);
     });
@@ -306,6 +309,14 @@ describe("ContradictionDetectionService", () => {
     test("returns stats with data", async () => {
       (mockDb.query as ReturnType<typeof mock>)
         .mockImplementationOnce(() => Promise.resolve([[{ total: 10 }]]))
+        .mockImplementationOnce(() =>
+          Promise.resolve([
+            [
+              { contradiction_type: "direct", count: 6 },
+              { contradiction_type: "semantic", count: 4 },
+            ],
+          ])
+        )
         .mockImplementationOnce(() =>
           Promise.resolve([
             [
@@ -326,6 +337,8 @@ describe("ContradictionDetectionService", () => {
       const stats = await service.getStats();
 
       expect(stats.totalContradictions).toBe(10);
+      expect(stats.byType.direct).toBe(6);
+      expect(stats.byType.semantic).toBe(4);
       expect(stats.mostContestedSubjects).toHaveLength(2);
       expect(stats.mostContestedSubjects[0].subject).toBe("Rust");
       expect(stats.mostContestedPredicates).toHaveLength(2);
