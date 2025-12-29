@@ -953,6 +953,8 @@ const saveToDatabaseStep = createStep({
         }
 
         // Fall back to simple storage if deduplication not used or failed
+        // Note: With ON DUPLICATE KEY UPDATE, we can't distinguish inserts from updates,
+        // so we don't increment newClaimsCreated here (would inflate the count)
         if (!claimId) {
           const claimResult = await db.query<any[][]>(
             `INSERT INTO claim (subject, predicate, object, confidence, extracted_at, is_canonical)
@@ -966,7 +968,6 @@ const saveToDatabaseStep = createStep({
             }
           );
           claimId = claimResult[0]?.[0]?.id;
-          newClaimsCreated++;
         }
 
         if (claimId) {
