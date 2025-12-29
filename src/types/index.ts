@@ -103,6 +103,28 @@ export const ConfigSchema = z.object({
       // Pre-compute related claims on save
       precompute: z.boolean().default(false),
     }).optional().default({}),
+    // Theme clustering configuration
+    clustering: z.object({
+      enabled: z.boolean().default(true),
+      // Clustering algorithm: kmeans, dbscan, hierarchical
+      algorithm: z.enum(["kmeans", "dbscan", "hierarchical"]).default("kmeans"),
+      // Minimum cluster size to keep
+      min_cluster_size: z.number().default(3),
+      // K-means: number of clusters (0 = auto-detect based on claim count)
+      num_clusters: z.number().default(0),
+      // DBSCAN: epsilon distance threshold
+      epsilon: z.number().default(0.3),
+      // DBSCAN: minimum points per cluster
+      min_points: z.number().default(3),
+      // Hierarchical: linkage type
+      linkage: z.enum(["single", "complete", "average"]).default("average"),
+      // Hierarchical: distance threshold for merging
+      distance_threshold: z.number().default(0.5),
+      // How often to recompute themes (hours)
+      recompute_interval_hours: z.number().default(24),
+      // Use LLM for generating theme labels
+      use_llm_labels: z.boolean().default(true),
+    }).optional().default({}),
   }).optional().default({}),
 });
 
