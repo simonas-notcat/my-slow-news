@@ -179,6 +179,16 @@ import type {
   ContradictionStats,
 } from './types';
 
+/** Maximum claims for pairwise detection before warning */
+const PAIRWISE_CLAIM_LIMIT = 500;
+
+/** Default retry configuration for LLM calls */
+const LLM_RETRY_CONFIG = {
+  maxRetries: 3,
+  baseDelayMs: 1000,
+  maxDelayMs: 10000,
+};
+
 export class ContradictionDetectionService {
   constructor(
     private db: Surreal,
@@ -192,6 +202,16 @@ export class ContradictionDetectionService {
 
   /**
    * Detect contradictions among claims.
+   *
+   * PERFORMANCE WARNING: This method has O(n²) time complexity where n = number of claims.
+   * - 100 claims = ~5,000 comparisons
+   * - 500 claims = ~125,000 comparisons
+   * - 1,000 claims = ~500,000 comparisons
+   *
+   * For datasets larger than 500 claims, consider using `detectContradictionsOptimized()`
+   * which leverages vector index queries for better performance.
+   *
+   * @param options.maxClaims - Limit claims to process (default: 500, max: 1000)
    */
   async detectContradictions(
     options: ContradictionDetectionOptions = {}
@@ -201,18 +221,29 @@ export class ContradictionDetectionService {
       useLlmVerification = true,
       batchSize = 100,
       limit = 100,
+      maxClaims = PAIRWISE_CLAIM_LIMIT,
     } = options;
 
     const contradictions: ContradictionPair[] = [];
 
-    // Get all canonical claims with embeddings
+    // Get all canonical claims with embeddings (with limit for safety)
+    const claimLimit = Math.min(maxClaims, 1000);
     const [claims] = await this.db.query<[ClaimRecord[]]>(`
       SELECT * FROM claim
       WHERE embedding IS NOT NONE AND is_canonical = true
-    `);
+      LIMIT $limit
+    `, { limit: claimLimit });
 
     if (!claims || claims.length < 2) {
       return [];
+    }
+
+    // Warn if approaching performance limits
+    if (claims.length > PAIRWISE_CLAIM_LIMIT) {
+      console.warn(
+        `Processing ${claims.length} claims with O(n²) algorithm. ` +
+        `Consider using detectContradictionsOptimized() for better performance.`
+      );
     }
 
     // Process in batches to avoid memory issues
@@ -252,22 +283,175 @@ export class ContradictionDetectionService {
           const claimText1 = this.formatClaimText(claim1);
           const claimText2 = this.formatClaimText(claim2);
 
-          try {
-            const llmResult = await this.llmVerify(claimText1, claimText2);
+          const llmResult = await this.verifyWithRetry(claimText1, claimText2);
 
-            if (llmResult.isContradiction && llmResult.confidence >= 0.7) {
-              contradictions.push({
-                claim1: this.claimToSummary(claim1),
-                claim2: this.claimToSummary(claim2),
-                similarity,
-                contradictionType: 'semantic',
-                confidence: llmResult.confidence,
-                explanation: llmResult.explanation,
-                detectedAt: new Date(),
-              });
-            }
-          } catch (error) {
-            console.warn('LLM verification failed:', error);
+          if (llmResult && llmResult.isContradiction && llmResult.confidence >= 0.7) {
+            contradictions.push({
+              claim1: this.claimToSummary(claim1),
+              claim2: this.claimToSummary(claim2),
+              similarity,
+              contradictionType: 'semantic',
+              confidence: llmResult.confidence,
+              explanation: llmResult.explanation,
+              detectedAt: new Date(),
+            });
+          }
+        }
+      }
+    }
+
+    return contradictions;
+  }
+
+  /**
+   * LLM verification with retry logic for transient failures.
+   */
+  private async verifyWithRetry(
+    claim1: string,
+    claim2: string
+  ): Promise<{ isContradiction: boolean; confidence: number; explanation: string } | null> {
+    if (!this.llmVerify) return null;
+
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < LLM_RETRY_CONFIG.maxRetries; attempt++) {
+      try {
+        return await this.llmVerify(claim1, claim2);
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        const isRetryable = this.isRetryableError(lastError);
+
+        if (!isRetryable || attempt === LLM_RETRY_CONFIG.maxRetries - 1) {
+          console.warn(
+            `LLM verification failed after ${attempt + 1} attempts:`,
+            lastError.message
+          );
+          return null;
+        }
+
+        // Exponential backoff
+        const delay = Math.min(
+          LLM_RETRY_CONFIG.baseDelayMs * Math.pow(2, attempt),
+          LLM_RETRY_CONFIG.maxDelayMs
+        );
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Check if an error is retryable (transient).
+   */
+  private isRetryableError(error: Error): boolean {
+    const message = error.message.toLowerCase();
+    return (
+      message.includes('rate limit') ||
+      message.includes('timeout') ||
+      message.includes('429') ||
+      message.includes('500') ||
+      message.includes('502') ||
+      message.includes('503') ||
+      message.includes('network') ||
+      message.includes('econnreset')
+    );
+  }
+
+  /**
+   * Optimized contradiction detection using vector index queries.
+   * More efficient for large datasets (>500 claims).
+   *
+   * Instead of O(n²) pairwise comparison, this method:
+   * 1. Iterates through claims once
+   * 2. Uses vector similarity search to find candidates
+   * 3. Only checks structural/LLM verification on candidates
+   *
+   * Complexity: O(n * k) where k is the number of similar candidates per claim
+   */
+  async detectContradictionsOptimized(
+    options: ContradictionDetectionOptions = {}
+  ): Promise<ContradictionPair[]> {
+    const {
+      minSimilarity = 0.7,
+      useLlmVerification = true,
+      limit = 100,
+    } = options;
+
+    const contradictions: ContradictionPair[] = [];
+    const processedPairs = new Set<string>();
+
+    // Get all canonical claims with embeddings
+    const [claims] = await this.db.query<[ClaimRecord[]]>(`
+      SELECT * FROM claim
+      WHERE embedding IS NOT NONE AND is_canonical = true
+    `);
+
+    if (!claims || claims.length < 2) {
+      return [];
+    }
+
+    // Process each claim and find similar ones using vector index
+    for (const claim of claims) {
+      if (contradictions.length >= limit) break;
+
+      // Use vector similarity search (leverages index)
+      const [candidates] = await this.db.query<[Array<ClaimRecord & { similarity: number }>]>(`
+        SELECT
+          *,
+          vector::similarity::cosine(embedding, $embedding) AS similarity
+        FROM claim
+        WHERE
+          embedding IS NOT NONE
+          AND is_canonical = true
+          AND id != $claimId
+          AND vector::similarity::cosine(embedding, $embedding) >= $minSimilarity
+        ORDER BY similarity DESC
+        LIMIT 20
+      `, {
+        embedding: claim.embedding,
+        claimId: claim.id,
+        minSimilarity,
+      });
+
+      for (const candidate of candidates || []) {
+        // Skip if already processed this pair
+        const pairKey = [claim.id, candidate.id].sort().join(':');
+        if (processedPairs.has(pairKey)) continue;
+        processedPairs.add(pairKey);
+
+        // Check for structural contradictions
+        const structuralResult = this.checkStructuralContradiction(claim, candidate);
+
+        if (structuralResult) {
+          contradictions.push({
+            claim1: this.claimToSummary(claim),
+            claim2: this.claimToSummary(candidate),
+            similarity: candidate.similarity,
+            contradictionType: structuralResult.type,
+            confidence: structuralResult.confidence,
+            detectedAt: new Date(),
+          });
+          continue;
+        }
+
+        // LLM verification for semantic contradictions
+        if (useLlmVerification && this.llmVerify) {
+          const llmResult = await this.verifyWithRetry(
+            this.formatClaimText(claim),
+            this.formatClaimText(candidate)
+          );
+
+          if (llmResult && llmResult.isContradiction && llmResult.confidence >= 0.7) {
+            contradictions.push({
+              claim1: this.claimToSummary(claim),
+              claim2: this.claimToSummary(candidate),
+              similarity: candidate.similarity,
+              contradictionType: 'semantic',
+              confidence: llmResult.confidence,
+              explanation: llmResult.explanation,
+              detectedAt: new Date(),
+            });
           }
         }
       }
@@ -624,14 +808,72 @@ DEFINE TABLE contradiction_stats AS
   GROUP BY contradiction_type;
 `;
 
+/** Migration version for tracking */
+export const MIGRATION_VERSION = '002';
+export const MIGRATION_NAME = 'contradiction-schema';
+
+/** Dependencies: migrations that must be applied before this one */
+export const MIGRATION_DEPENDENCIES = ['001-vector-schema'];
+
+/**
+ * Check if required dependencies are met.
+ */
+async function checkDependencies(db: Surreal): Promise<void> {
+  // Check if claim_similarity table exists (from vector schema)
+  const [tables] = await db.query<[Array<{ name: string }>]>(
+    `INFO FOR DB`
+  );
+
+  // Check for required fields from previous migrations
+  const [claimInfo] = await db.query<[any]>(`INFO FOR TABLE claim`);
+
+  const hasEmbedding = claimInfo?.fields?.embedding;
+  if (!hasEmbedding) {
+    throw new Error(
+      `Migration dependency not met: claim.embedding field not found. ` +
+      `Please apply migration 001-vector-schema first.`
+    );
+  }
+}
+
+/**
+ * Rollback the migration.
+ */
+export async function rollbackContradictionSchema(db: Surreal): Promise<void> {
+  console.log('Rolling back contradiction schema migration...');
+
+  try {
+    // Remove fields added by this migration (safe - doesn't delete data in other fields)
+    await db.query(`
+      REMOVE FIELD contradiction_type ON TABLE claim_similarity;
+      REMOVE FIELD explanation ON TABLE claim_similarity;
+      REMOVE INDEX idx_claim_similarity_contradicts ON TABLE claim_similarity;
+      REMOVE TABLE contradiction_stats;
+    `);
+    console.log('Contradiction schema rolled back successfully');
+  } catch (error) {
+    console.error('Failed to rollback contradiction schema:', error);
+    throw error;
+  }
+}
+
 export async function migrateContradictionSchema(db: Surreal): Promise<void> {
-  console.log('Applying contradiction schema migration...');
+  console.log(`Applying migration ${MIGRATION_VERSION}: ${MIGRATION_NAME}...`);
+
+  // Check dependencies first
+  await checkDependencies(db);
 
   try {
     await db.query(CONTRADICTION_SCHEMA);
     console.log('Contradiction schema applied successfully');
   } catch (error) {
     console.error('Failed to apply contradiction schema:', error);
+    console.log('Attempting rollback...');
+    try {
+      await rollbackContradictionSchema(db);
+    } catch (rollbackError) {
+      console.error('Rollback also failed:', rollbackError);
+    }
     throw error;
   }
 }
@@ -947,14 +1189,53 @@ program
   .name('contradictions')
   .description('Detect and manage contradicting claims');
 
+/** Input validation constraints */
+const CLI_LIMITS = {
+  limit: { min: 1, max: 500, default: 50 },
+  similarity: { min: 0.5, max: 1.0, default: 0.7 },
+  maxClaims: { min: 10, max: 1000, default: 500 },
+} as const;
+
+/**
+ * Validate and parse numeric option with bounds checking.
+ */
+function parseNumericOption(
+  value: string,
+  name: string,
+  limits: { min: number; max: number; default: number }
+): number {
+  const parsed = parseFloat(value);
+
+  if (isNaN(parsed)) {
+    console.error(`Error: ${name} must be a valid number`);
+    process.exit(1);
+  }
+
+  if (parsed < limits.min || parsed > limits.max) {
+    console.error(
+      `Error: ${name} must be between ${limits.min} and ${limits.max}`
+    );
+    process.exit(1);
+  }
+
+  return parsed;
+}
+
 program
   .command('detect')
   .description('Scan for contradicting claims')
-  .option('-l, --limit <count>', 'Maximum contradictions to find', '50')
-  .option('-s, --similarity <threshold>', 'Minimum similarity threshold', '0.7')
+  .option('-l, --limit <count>', `Maximum contradictions to find (${CLI_LIMITS.limit.min}-${CLI_LIMITS.limit.max})`, '50')
+  .option('-s, --similarity <threshold>', `Minimum similarity threshold (${CLI_LIMITS.similarity.min}-${CLI_LIMITS.similarity.max})`, '0.7')
+  .option('-m, --max-claims <count>', `Maximum claims to process (${CLI_LIMITS.maxClaims.min}-${CLI_LIMITS.maxClaims.max})`, '500')
   .option('--no-llm', 'Skip LLM verification')
+  .option('--optimized', 'Use optimized vector-index-based detection (recommended for >500 claims)')
   .option('--save', 'Save detected contradictions to database')
   .action(async (options) => {
+    // Validate inputs
+    const limit = parseNumericOption(options.limit, 'limit', CLI_LIMITS.limit);
+    const similarity = parseNumericOption(options.similarity, 'similarity', CLI_LIMITS.similarity);
+    const maxClaims = parseNumericOption(options.maxClaims, 'max-claims', CLI_LIMITS.maxClaims);
+
     const config = loadConfig();
     const db = await getDb(config);
 
@@ -968,10 +1249,16 @@ program
 
       console.log('Scanning for contradictions...\n');
 
-      const contradictions = await service.detectContradictions({
-        limit: parseInt(options.limit, 10),
-        minSimilarity: parseFloat(options.similarity),
+      // Use optimized method for large datasets
+      const detectFn = options.optimized
+        ? service.detectContradictionsOptimized.bind(service)
+        : service.detectContradictions.bind(service);
+
+      const contradictions = await detectFn({
+        limit,
+        minSimilarity: similarity,
         useLlmVerification: options.llm,
+        maxClaims,
       });
 
       if (contradictions.length === 0) {
@@ -1380,25 +1667,37 @@ describe('ContradictionDetectionService', () => {
 ## Success Criteria
 
 1. **Detection Accuracy**
-   - [ ] Direct contradictions detected with >95% accuracy
-   - [ ] Comparative reversals detected correctly
-   - [ ] LLM semantic verification adds <10% false positives
+   - [ ] Direct contradictions (predicate opposites) detected with >95% precision
+   - [ ] Comparative reversals (A > B vs B > A) detected with 100% accuracy
+   - [ ] Negation patterns detected with >90% accuracy
+   - [ ] LLM semantic verification precision >85% (false positive rate <15%)
+   - [ ] Overall recall >80% (catches 80% of true contradictions)
 
 2. **User Experience**
-   - [ ] Contradictions view accessible from main menu
-   - [ ] Contradictions shown in claim detail view
-   - [ ] Clear visual distinction between contradiction types
-   - [ ] Navigation between contradicting claims
+   - [ ] Contradictions view accessible from main menu via keyboard shortcut
+   - [ ] Contradictions shown in claim detail view with expand/collapse
+   - [ ] Clear visual distinction between 4 contradiction types (icons + colors)
+   - [ ] Navigation between contradicting claims within 2 keystrokes
 
 3. **Performance**
-   - [ ] Detection completes in <30s for 1000 claims
-   - [ ] Claim-specific contradiction lookup <500ms
-   - [ ] LLM verification batched for efficiency
+   - [ ] Pairwise detection: <10s for 100 claims, <30s for 500 claims
+   - [ ] Optimized detection: <60s for 1000 claims, <5min for 5000 claims
+   - [ ] Claim-specific contradiction lookup <500ms (uses vector index)
+   - [ ] LLM verification with retry completes within 30s per pair
+   - [ ] Memory usage <500MB for 1000 claim analysis
 
 4. **Integration**
-   - [ ] CLI commands work correctly
-   - [ ] Contradictions persist in database
-   - [ ] Stats accurately reflect stored contradictions
+   - [ ] All CLI commands validate inputs with clear error messages
+   - [ ] CLI shows progress indicator for long-running operations
+   - [ ] Contradictions persist correctly with all fields populated
+   - [ ] Stats query returns in <100ms
+
+5. **Test Coverage**
+   - [ ] Unit tests: >90% line coverage for service.ts
+   - [ ] Unit tests: 100% coverage for predicate-opposites.ts
+   - [ ] Integration tests: Cover all CLI commands
+   - [ ] Tests for retry logic and error handling paths
+   - [ ] Tests for input validation edge cases
 
 ---
 

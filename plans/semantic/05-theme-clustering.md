@@ -1025,14 +1025,64 @@ DEFINE FIELD assignedAt ON claim_theme TYPE datetime;
 DEFINE INDEX idx_claim_theme_score ON claim_theme FIELDS membershipScore;
 `;
 
+/** Migration version for tracking */
+export const MIGRATION_VERSION = '003';
+export const MIGRATION_NAME = 'theme-schema';
+
+/** Dependencies: migrations that must be applied before this one */
+export const MIGRATION_DEPENDENCIES = ['001-vector-schema'];
+
+/**
+ * Check if required dependencies are met.
+ */
+async function checkDependencies(db: Surreal): Promise<void> {
+  // Check for required fields from previous migrations
+  const [claimInfo] = await db.query<[any]>(`INFO FOR TABLE claim`);
+
+  const hasEmbedding = claimInfo?.fields?.embedding;
+  if (!hasEmbedding) {
+    throw new Error(
+      `Migration dependency not met: claim.embedding field not found. ` +
+      `Please apply migration 001-vector-schema first.`
+    );
+  }
+}
+
+/**
+ * Rollback the migration.
+ */
+export async function rollbackThemeSchema(db: Surreal): Promise<void> {
+  console.log('Rolling back theme schema migration...');
+
+  try {
+    await db.query(`
+      REMOVE TABLE claim_theme;
+      REMOVE TABLE theme;
+    `);
+    console.log('Theme schema rolled back successfully');
+  } catch (error) {
+    console.error('Failed to rollback theme schema:', error);
+    throw error;
+  }
+}
+
 export async function migrateThemeSchema(db: Surreal): Promise<void> {
-  console.log('Applying theme schema migration...');
+  console.log(`Applying migration ${MIGRATION_VERSION}: ${MIGRATION_NAME}...`);
+
+  // Check dependencies first
+  await checkDependencies(db);
 
   try {
     await db.query(THEME_SCHEMA);
     console.log('Theme schema applied successfully');
   } catch (error) {
     console.error('Failed to apply theme schema:', error);
+    console.log('Attempting rollback...');
+    try {
+      await rollbackThemeSchema(db);
+    } catch (rollbackError) {
+      console.error('Rollback also failed:', rollbackError);
+    }
     throw error;
   }
 }
@@ -1362,29 +1412,84 @@ program
   .name('themes')
   .description('Manage theme clustering');
 
+/** Input validation constraints */
+const CLI_LIMITS = {
+  clusters: { min: 2, max: 100, default: 10 },
+  epsilon: { min: 0.1, max: 1.0, default: 0.3 },
+  minPoints: { min: 2, max: 50, default: 3 },
+  limit: { min: 1, max: 100, default: 20 },
+} as const;
+
+/** Valid clustering algorithms */
+const VALID_ALGORITHMS = ['kmeans', 'dbscan', 'hierarchical'] as const;
+
+/**
+ * Validate and parse numeric option with bounds checking.
+ */
+function parseNumericOption(
+  value: string,
+  name: string,
+  limits: { min: number; max: number; default: number }
+): number {
+  const parsed = parseFloat(value);
+
+  if (isNaN(parsed)) {
+    console.error(`Error: ${name} must be a valid number`);
+    process.exit(1);
+  }
+
+  if (parsed < limits.min || parsed > limits.max) {
+    console.error(
+      `Error: ${name} must be between ${limits.min} and ${limits.max}`
+    );
+    process.exit(1);
+  }
+
+  return parsed;
+}
+
+/**
+ * Validate algorithm option.
+ */
+function validateAlgorithm(algo: string): ClusteringAlgorithm {
+  if (!VALID_ALGORITHMS.includes(algo as any)) {
+    console.error(
+      `Error: algorithm must be one of: ${VALID_ALGORITHMS.join(', ')}`
+    );
+    process.exit(1);
+  }
+  return algo as ClusteringAlgorithm;
+}
+
 program
   .command('cluster')
   .description('Run clustering on claims to generate themes')
-  .option('-a, --algorithm <algo>', 'Clustering algorithm (kmeans, dbscan, hierarchical)', 'kmeans')
-  .option('-k, --clusters <count>', 'Number of clusters (kmeans)', '10')
-  .option('-e, --epsilon <value>', 'Epsilon for DBSCAN', '0.3')
-  .option('-m, --min-points <count>', 'Minimum points per cluster', '3')
+  .option('-a, --algorithm <algo>', `Clustering algorithm (${VALID_ALGORITHMS.join(', ')})`, 'kmeans')
+  .option('-k, --clusters <count>', `Number of clusters for kmeans (${CLI_LIMITS.clusters.min}-${CLI_LIMITS.clusters.max})`, '10')
+  .option('-e, --epsilon <value>', `Epsilon for DBSCAN (${CLI_LIMITS.epsilon.min}-${CLI_LIMITS.epsilon.max})`, '0.3')
+  .option('-m, --min-points <count>', `Minimum points per cluster (${CLI_LIMITS.minPoints.min}-${CLI_LIMITS.minPoints.max})`, '3')
   .option('--save', 'Save results to database')
   .action(async (options) => {
+    // Validate inputs
+    const algorithm = validateAlgorithm(options.algorithm);
+    const numClusters = parseNumericOption(options.clusters, 'clusters', CLI_LIMITS.clusters);
+    const epsilon = parseNumericOption(options.epsilon, 'epsilon', CLI_LIMITS.epsilon);
+    const minPoints = parseNumericOption(options.minPoints, 'min-points', CLI_LIMITS.minPoints);
+
     const config = loadConfig();
     const db = await getDb(config);
 
     try {
       const service = new ThemeClusteringService(db);
 
-      console.log(`Running ${options.algorithm} clustering...\n`);
+      console.log(`Running ${algorithm} clustering...\n`);
 
       const result = await service.clusterClaims({
-        algorithm: options.algorithm as ClusteringAlgorithm,
-        numClusters: parseInt(options.clusters, 10),
-        epsilon: parseFloat(options.epsilon),
-        minPoints: parseInt(options.minPoints, 10),
-        minClusterSize: parseInt(options.minPoints, 10),
+        algorithm,
+        numClusters,
+        epsilon,
+        minPoints,
+        minClusterSize: minPoints,
       });
 
       console.log('Clustering Results');
@@ -1893,25 +1998,42 @@ describe('ThemeClusteringService', () => {
 ## Success Criteria
 
 1. **Clustering Quality**
-   - [ ] Silhouette score > 0.3 on typical data
-   - [ ] Themes are semantically coherent (user validation)
-   - [ ] LLM-generated labels are accurate and descriptive
+   - [ ] Silhouette score > 0.3 on typical data (average across runs)
+   - [ ] Silhouette score > 0.5 for well-separated topics
+   - [ ] >80% of themes judged semantically coherent by user validation
+   - [ ] LLM-generated labels match theme content >90% of the time
+   - [ ] <10% of claims remain unclustered with default settings
+   - [ ] No cluster contains >50% of all claims (balanced distribution)
 
 2. **User Experience**
-   - [ ] Themes view accessible from main menu
-   - [ ] Theme drill-down shows relevant claims
-   - [ ] Clear indication of claim membership strength
-   - [ ] Unclustered claims are accessible
+   - [ ] Themes view accessible from main menu via keyboard shortcut
+   - [ ] Theme drill-down shows claims sorted by membership score
+   - [ ] Membership percentage displayed for each claim (0-100%)
+   - [ ] Unclustered claims accessible via dedicated "Unclustered" view
+   - [ ] Theme keywords help identify content at a glance
 
 3. **Performance**
-   - [ ] Clustering 1000 claims < 30s
-   - [ ] Theme list loads < 500ms
-   - [ ] Theme detail loads < 500ms
+   - [ ] K-means clustering: <10s for 500 claims, <30s for 1000 claims
+   - [ ] DBSCAN clustering: <15s for 500 claims, <45s for 1000 claims
+   - [ ] LLM theme labeling: <2s per theme (batched)
+   - [ ] Theme list loads < 200ms
+   - [ ] Theme detail with 50 claims loads < 500ms
+   - [ ] Memory usage <300MB for 1000 claim clustering
 
 4. **Integration**
-   - [ ] CLI commands work correctly
-   - [ ] Themes persist across sessions
-   - [ ] Re-clustering updates themes cleanly
+   - [ ] All CLI commands validate inputs with clear error messages
+   - [ ] CLI shows progress indicator during clustering
+   - [ ] Themes persist correctly with all fields populated
+   - [ ] Re-clustering cleanly replaces old themes (no orphan data)
+   - [ ] Rollback restores previous state on failure
+
+5. **Test Coverage**
+   - [ ] Unit tests: >85% line coverage for algorithms.ts
+   - [ ] Unit tests: >90% line coverage for service.ts
+   - [ ] Tests cover all three clustering algorithms
+   - [ ] Tests for edge cases (empty data, single claim, all identical)
+   - [ ] Tests for input validation in CLI commands
+   - [ ] Integration tests for database persistence
 
 ---
 
