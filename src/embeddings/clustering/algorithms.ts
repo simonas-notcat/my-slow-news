@@ -293,8 +293,30 @@ export function averageEmbedding(embeddings: number[][]): number[] {
   return avg.map((v) => v / norm);
 }
 
+/** Maximum dataset size before memory warning */
+const SIMILARITY_MATRIX_WARN_SIZE = 5000;
+
+/**
+ * Compute pairwise similarity matrix.
+ *
+ * MEMORY WARNING: This creates an O(n²) matrix.
+ * - 1,000 points = ~8MB
+ * - 5,000 points = ~200MB
+ * - 10,000 points = ~800MB
+ *
+ * For very large datasets, consider using approximate methods.
+ */
 function computeSimilarityMatrix(embeddings: number[][]): number[][] {
   const n = embeddings.length;
+
+  if (n > SIMILARITY_MATRIX_WARN_SIZE) {
+    console.warn(
+      `Computing similarity matrix for ${n} embeddings. ` +
+        `This requires ~${Math.round((n * n * 8) / 1024 / 1024)}MB of memory. ` +
+        `Consider using k-means for large datasets.`
+    );
+  }
+
   const matrix: number[][] = Array(n)
     .fill(null)
     .map(() => Array(n).fill(0));

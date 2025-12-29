@@ -329,11 +329,17 @@ describe("ThemeClusteringService", () => {
       await service.saveClusteringResults(result);
 
       // Should have called query for:
-      // 1. Deactivate old themes
-      // 2. Delete old assignments
-      // 3. Create new theme
-      // 4. Create assignment
-      expect(mockDb.query).toHaveBeenCalledTimes(4);
+      // 1. BEGIN TRANSACTION
+      // 2. Deactivate old themes (in parallel with 3)
+      // 3. Delete old assignments (in parallel with 2)
+      // 4. Batch create themes
+      // 5. Batch create assignments
+      // 6. COMMIT TRANSACTION
+      expect(mockDb.query).toHaveBeenCalledTimes(6);
+
+      // Verify transaction calls
+      expect(mockDb.query).toHaveBeenNthCalledWith(1, "BEGIN TRANSACTION");
+      expect(mockDb.query).toHaveBeenLastCalledWith("COMMIT TRANSACTION");
     });
   });
 
@@ -539,6 +545,18 @@ describe("ThemeClusteringService", () => {
         expect.stringContaining(">="),
         expect.objectContaining({ minSimilarity: 0.8 })
       );
+    });
+
+    test("throws error for empty embedding array", async () => {
+      await expect(service.searchThemes([])).rejects.toThrow(
+        "queryEmbedding must be a non-empty array"
+      );
+    });
+
+    test("throws error for invalid embedding values", async () => {
+      await expect(
+        service.searchThemes([1, NaN, 0] as number[])
+      ).rejects.toThrow("must contain only valid numbers");
     });
   });
 

@@ -9,6 +9,10 @@ import {
   migrateContradictionSchema,
   isContradictionSchemaApplied,
 } from "./migrations/002-contradiction-schema";
+import {
+  migrateThemeSchema,
+  isThemeSchemaApplied,
+} from "./migrations/003-theme-schema";
 
 async function initializeDatabase() {
   console.log("Initializing My Slow News database...");
@@ -71,6 +75,16 @@ async function initializeDatabase() {
     await migrateContradictionSchema(db);
   }
 
+  // Apply theme schema migration
+  console.log("\nChecking theme schema migration...");
+  const themeSchemaApplied = await isThemeSchemaApplied(db);
+  if (themeSchemaApplied) {
+    console.log("Theme schema already applied, skipping migration");
+  } else {
+    const dimensions = config.embeddings?.dimensions ?? 1536;
+    await migrateThemeSchema(db, dimensions);
+  }
+
   // Verify tables exist
   console.log("\nVerifying tables...");
   const tables = [
@@ -81,6 +95,8 @@ async function initializeDatabase() {
     "digest",
     "predicate",
     "claim_similarity",
+    "theme",
+    "claim_theme",
   ];
   for (const table of tables) {
     const result = await db.query(`INFO FOR TABLE ${table}`);

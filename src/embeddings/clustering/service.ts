@@ -241,30 +241,22 @@ export class ThemeClusteringService {
 
   /**
    * Save clustering results to database.
+   * Uses batch operations and transactions for efficiency and atomicity.
    */
   async saveClusteringResults(result: ClusteringResult): Promise<void> {
-    // Deactivate old themes
-    await this.db.query(`UPDATE theme SET isActive = false`);
+    // Use a transaction for atomicity
+    await this.db.query("BEGIN TRANSACTION");
 
-    // Delete old assignments
-    await this.db.query(`DELETE claim_theme`);
+    try {
+      // Deactivate old themes and delete old assignments in parallel
+      await Promise.all([
+        this.db.query(`UPDATE theme SET isActive = false`),
+        this.db.query(`DELETE claim_theme`),
+      ]);
 
-    // Create new themes
-    for (const theme of result.themes) {
-      await this.db.query(
-        `
-        CREATE theme SET
-          id = $id,
-          name = $name,
-          description = $description,
-          keywords = $keywords,
-          centroid = $centroid,
-          claimCount = $claimCount,
-          createdAt = $createdAt,
-          updatedAt = $updatedAt,
-          isActive = $isActive
-      `,
-        {
+      // Batch create themes using INSERT with multiple values
+      if (result.themes.length > 0) {
+        const themeData = result.themes.map((theme) => ({
           id: theme.id,
           name: theme.name,
           description: theme.description || null,
@@ -274,25 +266,52 @@ export class ThemeClusteringService {
           createdAt: theme.createdAt.toISOString(),
           updatedAt: theme.updatedAt.toISOString(),
           isActive: theme.isActive,
-        }
-      );
-    }
+        }));
 
-    // Create assignments
-    for (const assignment of result.assignments) {
-      await this.db.query(
-        `
-        RELATE $claimId->claim_theme->$themeId SET
-          membershipScore = $score,
-          assignedAt = $assignedAt
-      `,
-        {
-          claimId: assignment.claimId,
-          themeId: assignment.themeId,
-          score: assignment.membershipScore,
-          assignedAt: assignment.assignedAt.toISOString(),
-        }
-      );
+        await this.db.query(
+          `
+          FOR $theme IN $themes {
+            CREATE theme SET
+              id = $theme.id,
+              name = $theme.name,
+              description = $theme.description,
+              keywords = $theme.keywords,
+              centroid = $theme.centroid,
+              claimCount = $theme.claimCount,
+              createdAt = <datetime>$theme.createdAt,
+              updatedAt = <datetime>$theme.updatedAt,
+              isActive = $theme.isActive
+          }
+        `,
+          { themes: themeData }
+        );
+      }
+
+      // Batch create assignments
+      if (result.assignments.length > 0) {
+        const assignmentData = result.assignments.map((a) => ({
+          claimId: a.claimId,
+          themeId: a.themeId,
+          score: a.membershipScore,
+          assignedAt: a.assignedAt.toISOString(),
+        }));
+
+        await this.db.query(
+          `
+          FOR $a IN $assignments {
+            RELATE $a.claimId->claim_theme->$a.themeId SET
+              membershipScore = $a.score,
+              assignedAt = <datetime>$a.assignedAt
+          }
+        `,
+          { assignments: assignmentData }
+        );
+      }
+
+      await this.db.query("COMMIT TRANSACTION");
+    } catch (error) {
+      await this.db.query("CANCEL TRANSACTION");
+      throw error;
     }
   }
 
@@ -386,6 +405,15 @@ export class ThemeClusteringService {
     queryEmbedding: number[],
     options: { limit?: number; minSimilarity?: number } = {}
   ): Promise<Array<Theme & { similarity: number }>> {
+    // Input validation
+    if (!Array.isArray(queryEmbedding) || queryEmbedding.length === 0) {
+      throw new Error("queryEmbedding must be a non-empty array of numbers");
+    }
+
+    if (!queryEmbedding.every((n) => typeof n === "number" && !isNaN(n))) {
+      throw new Error("queryEmbedding must contain only valid numbers");
+    }
+
     const { limit = 10, minSimilarity = 0.5 } = options;
 
     const [themes] = await this.db.query<
