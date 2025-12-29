@@ -67,7 +67,7 @@ describe("Deduplication Configuration", () => {
     test("should not skip deduplication for ollama provider even without OPENAI_API_KEY", () => {
       delete process.env.OPENAI_API_KEY;
 
-      const provider = "ollama";
+      const provider = "ollama" as "openai" | "ollama";
       const shouldSkip = provider === "openai" && !process.env.OPENAI_API_KEY;
 
       expect(shouldSkip).toBe(false);
