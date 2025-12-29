@@ -78,7 +78,8 @@ export const ConfigSchema = z.object({
   // Semantic features configuration
   semantic: z.object({
     deduplication: z.object({
-      enabled: z.boolean().default(true),
+      // Default to false since OpenAI API key is required for default provider
+      enabled: z.boolean().default(false),
       similarity_threshold: z.number().default(0.92),
       related_threshold: z.number().default(0.75),
     }).optional().default({}),
