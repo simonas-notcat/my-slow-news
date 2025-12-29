@@ -326,10 +326,10 @@ OLLAMA_BASE_URL=http://localhost:11434  # For local embeddings
 ## Detailed Plans
 
 - [01-semantic-claim-deduplication.md](./01-semantic-claim-deduplication.md)
-- 02-natural-language-search.md (TODO)
-- 03-related-claims-discovery.md (TODO)
-- 04-contradiction-detection.md (TODO)
-- 05-theme-clustering.md (TODO)
+- [02-natural-language-search.md](./02-natural-language-search.md)
+- [03-related-claims-discovery.md](./03-related-claims-discovery.md)
+- [04-contradiction-detection.md](./04-contradiction-detection.md)
+- [05-theme-clustering.md](./05-theme-clustering.md)
 - 06-personalized-recommendations.md (TODO)
 - 07-cross-subreddit-bridging.md (TODO)
 - 08-temporal-semantic-analysis.md (TODO)
