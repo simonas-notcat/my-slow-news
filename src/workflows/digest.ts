@@ -46,7 +46,6 @@ import {
 } from "../utils/digest-format";
 import { getEmbeddingService, type EmbeddingConfig } from "../embeddings";
 import { ClaimDeduplicationService } from "../embeddings/deduplication";
-import { RelatedClaimsService, type RelatedClaim } from "../embeddings/related";
 import { ContradictionDetectionService } from "../embeddings/contradictions/service";
 import { createContradictionVerifier } from "../embeddings/contradictions/llm-verifier";
 import type { ContradictionPair } from "../embeddings/contradictions/types";
@@ -199,8 +198,8 @@ type SaveToDatabaseContext = {
   inputData?: DigestWithData;
 } & Partial<DigestWithData>;
 
-// Schema for related claim in digest
-const RelatedClaimSchema = z.object({
+// Schema for related claim in digest (workflow-specific, differs from service type)
+const RelatedClaimDigest = z.object({
   subject: z.string(),
   predicate: z.string(),
   object: z.string(),
@@ -228,7 +227,7 @@ const ContradictionSchema = z.object({
 
 // Schema for semantic analysis results
 const SemanticAnalysisSchema = z.object({
-  relatedClaimsMap: z.record(z.string(), z.array(RelatedClaimSchema)),
+  relatedClaimsMap: z.record(z.string(), z.array(RelatedClaimDigest)),
   contradictions: z.array(ContradictionSchema),
 });
 
@@ -708,6 +707,10 @@ const semanticAnalysisStep = createStep({
     const date = input.date ?? new Date().toISOString().split("T")[0];
     const config = loadConfig();
 
+    // Constants for semantic analysis
+    const CONTRADICTION_CANDIDATE_LIMIT = 10;
+    const CONTRADICTION_MIN_CONFIDENCE = 0.7;
+
     // Check if semantic features are enabled
     const semanticConfig = config.semantic ?? {};
     const relatedConfig = semanticConfig.related_in_digest ?? {};
@@ -831,7 +834,7 @@ const semanticAnalysisStep = createStep({
         }
 
         const totalRelated = Object.values(semanticAnalysis.relatedClaimsMap)
-          .reduce((sum: number, arr: Array<{ subject: string; predicate: string; object: string; similarity: number; date?: string }>) => sum + arr.length, 0);
+          .reduce((sum: number, arr: Array<{ subject: string; predicate: string; object: string; similarity: number; date?: string }>) => sum + (arr?.length ?? 0), 0);
         console.log(`  Found ${totalRelated} related claims for ${Object.keys(semanticAnalysis.relatedClaimsMap).length} new claims`);
       }
 
@@ -874,10 +877,11 @@ const semanticAnalysisStep = createStep({
               AND vector::similarity::cosine(embedding, $embedding) >= $minSimilarity
               AND NOT (subject = $subject AND predicate = $predicate AND object = $object)
             ORDER BY similarity DESC
-            LIMIT 10
+            LIMIT $candidateLimit
           `, {
             embedding,
             minSimilarity,
+            candidateLimit: CONTRADICTION_CANDIDATE_LIMIT,
             subject: claim.subject,
             predicate: claim.predicate,
             object: claim.object,
@@ -897,7 +901,7 @@ const semanticAnalysisStep = createStep({
             if (llmVerifier) {
               try {
                 const result = await llmVerifier(newClaimText, existingClaimText);
-                if (result.isContradiction && result.confidence >= 0.7) {
+                if (result.isContradiction && result.confidence >= CONTRADICTION_MIN_CONFIDENCE) {
                   semanticAnalysis.contradictions.push({
                     newClaim: {
                       subject: claim.subject,
