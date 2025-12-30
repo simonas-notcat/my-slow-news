@@ -78,8 +78,18 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     return () => {
       if (dbRef.current) {
-        dbRef.current.close();
-        dbRef.current = null;
+        const db = dbRef.current;
+        dbRef.current = null; // Clear ref synchronously
+
+        // Fire-and-forget async cleanup
+        void (async () => {
+          try {
+            await db.close();
+          } catch (error) {
+            // Ignore errors during cleanup (component unmounted)
+            console.debug("DB cleanup error:", error);
+          }
+        })();
       }
     };
   }, []);

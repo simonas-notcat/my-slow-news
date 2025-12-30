@@ -1,8 +1,12 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 import "../env";
+import { validateEnv } from "../config/env";
 import { program } from "commander";
 import { runDigestWorkflow, type DigestOutput } from "../workflows/digest";
 import { closeDb } from "../db";
+
+// Validate environment variables before proceeding
+validateEnv();
 
 function isValidDate(dateStr: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
