@@ -13,7 +13,7 @@ RUN npm ci
 
 # Production stage
 FROM base AS release
-COPY --from=install-dev /app/node_modules node_modules
+COPY --from=install /app/node_modules node_modules
 COPY src src
 COPY package.json .
 COPY tsconfig.json .

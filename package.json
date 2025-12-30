@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "description": "Deliberate news consumption - daily digests with knowledge extraction",
   "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "digest": "tsx src/cli/digest.ts",
     "stance": "tsx src/cli/stance.ts",
@@ -40,6 +43,7 @@
     "react": "^18.3.1",
     "rss-parser": "^3.13.0",
     "surrealdb": "^1.0.0",
+    "tsx": "^4.19.2",
     "yaml": "^2.7.0",
     "zod": "^3.24.0"
   },
@@ -48,7 +52,6 @@
     "@types/react": "^18.3.27",
     "@vitest/ui": "^2.1.8",
     "ink-testing-library": "^4.0.0",
-    "tsx": "^4.19.2",
     "typescript": "^5.7.0",
     "vitest": "^2.1.8"
   }
