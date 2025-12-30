@@ -30,7 +30,11 @@
     "test:ci": "vitest run",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "web": "npm run dev --prefix web",
+    "web:build": "npm run build --prefix web",
+    "web:preview": "npm run preview --prefix web",
+    "web:install": "npm install --prefix web"
   },
   "dependencies": {
     "@mastra/core": "^0.24.9",
