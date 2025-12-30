@@ -14,9 +14,10 @@ DEFINE FIELD contradiction_type ON claim_similarity TYPE option<string>;
 DEFINE FIELD explanation ON claim_similarity TYPE option<string>;
 
 -- Index for finding contradictions by relationship
-DEFINE INDEX idx_claim_similarity_contradicts ON claim_similarity
-  FIELDS relationship
-  WHERE relationship = 'contradicts';
+-- Note: WHERE clause removed for compatibility with SurrealDB v2 cloud instances
+-- Original syntax: WHERE relationship = 'contradicts'
+-- The WHERE clause is not supported in all SurrealDB versions, particularly cloud deployments
+DEFINE INDEX idx_claim_similarity_contradicts ON claim_similarity FIELDS relationship;
 `;
 
 /** Migration version for tracking */
@@ -45,13 +46,27 @@ async function checkDependencies(db: Surreal): Promise<void> {
       );
     }
   } catch (error) {
-    if (error instanceof Error && error.message.includes("dependency")) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
+    // Re-throw dependency errors
+    if (errorMessage.includes("dependency")) {
       throw error;
     }
-    throw new Error(
-      `Migration dependency not met: claim_similarity table not found. ` +
-        `Please apply migration 001-vector-schema first.`
-    );
+
+    // Only suppress expected schema-related errors (table not found)
+    // Re-throw connection errors, permission errors, etc.
+    if (
+      errorMessage.includes("does not exist") ||
+      errorMessage.includes("not found")
+    ) {
+      throw new Error(
+        `Migration dependency not met: claim_similarity table not found. ` +
+          `Please apply migration 001-vector-schema first.`
+      );
+    }
+
+    // For unexpected errors, re-throw them
+    throw error;
   }
 }
 
@@ -126,7 +141,23 @@ export async function migrateContradictionSchema(db: Surreal): Promise<void> {
   }
 
   try {
-    await db.query(CONTRADICTION_SCHEMA);
+    // Split into individual statements and ignore "already exists" errors
+    const statements = CONTRADICTION_SCHEMA
+      .split(";")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0 && !s.startsWith("--"));
+
+    for (const statement of statements) {
+      try {
+        await db.query(statement);
+      } catch (error) {
+        // Ignore "already exists" errors
+        const message = error instanceof Error ? error.message : String(error);
+        if (!message.includes("already exists")) {
+          throw error;
+        }
+      }
+    }
     console.log("Contradiction schema applied successfully");
   } catch (error) {
     console.error("Failed to apply contradiction schema:", error);

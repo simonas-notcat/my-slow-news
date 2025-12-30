@@ -24,6 +24,11 @@ export function loadConfig(): Config {
   const parsed = parse(content);
   const config = ConfigSchema.parse(parsed);
 
+  // Allow DATABASE_URL environment variable to override config.yaml
+  if (process.env.DATABASE_URL) {
+    config.database.url = process.env.DATABASE_URL;
+  }
+
   return config;
 }
 

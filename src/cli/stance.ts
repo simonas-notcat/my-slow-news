@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import "../env";
 import { program } from "commander";
 import { loadConfig } from "../config";
 import { getDb, closeDb } from "../db";
