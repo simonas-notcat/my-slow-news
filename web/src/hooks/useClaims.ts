@@ -1,19 +1,21 @@
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useRef } from "react";
 import { useAppContext } from "../context/AppContext";
 import { useDatabase } from "../context/DatabaseContext";
 import { buildClaimsQuery, buildCountQuery } from "../utils/queries";
-import type { ClaimListItem } from "../types";
-
-interface CountResult {
-  count: number;
-}
+import { ClaimListItemSchema, CountResultSchema } from "../types/schemas";
 
 export function useClaims() {
   const { state, dispatch } = useAppContext();
   const { db, isConnected } = useDatabase();
 
+  // Track request ID to handle race conditions
+  const requestIdRef = useRef(0);
+
   const fetchClaims = useCallback(async () => {
     if (!db || !isConnected) return;
+
+    // Increment request ID and capture current value
+    const currentRequestId = ++requestIdRef.current;
 
     dispatch({ type: "SET_LOADING", loading: true });
 
@@ -23,15 +25,29 @@ export function useClaims() {
       const countQuery = buildCountQuery(state.filters);
 
       const [claimsResult, countResult] = await Promise.all([
-        db.query<ClaimListItem[][]>(claimsQuery.sql, claimsQuery.params),
-        db.query<CountResult[][]>(countQuery.sql, countQuery.params),
+        db.query<unknown[][]>(claimsQuery.sql, claimsQuery.params),
+        db.query<unknown[][]>(countQuery.sql, countQuery.params),
       ]);
 
-      const claims = claimsResult[0] || [];
-      const total = countResult[0]?.[0]?.count || 0;
+      // Check if this is still the latest request
+      if (currentRequestId !== requestIdRef.current) {
+        return; // Stale request, ignore results
+      }
 
-      dispatch({ type: "SET_CLAIMS", claims, total });
+      // Validate results with Zod
+      const rawClaims = claimsResult[0] || [];
+      const claims = rawClaims.map((item) => ClaimListItemSchema.parse(item));
+
+      const rawCount = countResult[0]?.[0];
+      const countData = rawCount ? CountResultSchema.parse(rawCount) : { count: 0 };
+
+      dispatch({ type: "SET_CLAIMS", claims, total: countData.count });
     } catch (err) {
+      // Only dispatch error if this is still the latest request
+      if (currentRequestId !== requestIdRef.current) {
+        return;
+      }
+
       const message =
         err instanceof Error ? err.message : "Failed to fetch claims";
       dispatch({ type: "SET_ERROR", error: message });

@@ -3,6 +3,8 @@ import {
   useContext,
   useEffect,
   useState,
+  useRef,
+  useCallback,
   type ReactNode,
 } from "react";
 import Surreal from "surrealdb";
@@ -23,9 +25,18 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const connect = async (config: DatabaseConfig) => {
+  // Use ref to track the current db instance for cleanup
+  const dbRef = useRef<Surreal | null>(null);
+
+  const connect = useCallback(async (config: DatabaseConfig) => {
     try {
       setError(null);
+
+      // Close existing connection if any
+      if (dbRef.current) {
+        await dbRef.current.close();
+      }
+
       const surreal = new Surreal();
 
       await surreal.connect(config.url);
@@ -43,6 +54,7 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
         database: config.database,
       });
 
+      dbRef.current = surreal;
       setDb(surreal);
       setIsConnected(true);
     } catch (err) {
@@ -51,24 +63,26 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
       setError(message);
       setIsConnected(false);
     }
-  };
+  }, []);
 
-  const disconnect = async () => {
-    if (db) {
-      await db.close();
+  const disconnect = useCallback(async () => {
+    if (dbRef.current) {
+      await dbRef.current.close();
+      dbRef.current = null;
       setDb(null);
       setIsConnected(false);
     }
-  };
+  }, []);
 
-  // Cleanup on unmount
+  // Cleanup on unmount - use empty deps and ref
   useEffect(() => {
     return () => {
-      if (db) {
-        db.close();
+      if (dbRef.current) {
+        dbRef.current.close();
+        dbRef.current = null;
       }
     };
-  }, [db]);
+  }, []);
 
   return (
     <DatabaseContext.Provider

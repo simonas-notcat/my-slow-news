@@ -137,6 +137,15 @@ export function ConnectionDialog() {
           </button>
         </form>
 
+        {/* Security warning */}
+        <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-md">
+          <p className="text-xs text-amber-700">
+            <strong>Security note:</strong> This app connects directly to SurrealDB
+            from your browser. Only use this for local development or trusted
+            networks. For production, use a backend API layer to protect credentials.
+          </p>
+        </div>
+
         <p className="text-xs text-gray-400 text-center mt-4">
           Make sure SurrealDB is running and accessible
         </p>

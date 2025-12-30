@@ -1,3 +1,4 @@
+import { memo, useCallback } from "react";
 import { useAppContext } from "../context/AppContext";
 import { getStanceIndicator, formatConfidence, formatRelativeDate } from "../utils/formatters";
 import type { ClaimListItem } from "../types";
@@ -7,20 +8,36 @@ interface ClaimItemProps {
   isSelected?: boolean;
 }
 
-export function ClaimItem({ claim, isSelected }: ClaimItemProps) {
+export const ClaimItem = memo(function ClaimItem({ claim, isSelected }: ClaimItemProps) {
   const { dispatch } = useAppContext();
   const stanceInfo = getStanceIndicator(claim.user_stance);
   const confidence = formatConfidence(claim.confidence);
 
-  const handleClick = () => {
+  const handleClick = useCallback(() => {
     dispatch({ type: "VIEW_DETAIL", claimId: claim.id });
-  };
+  }, [dispatch, claim.id]);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        dispatch({ type: "VIEW_DETAIL", claimId: claim.id });
+      }
+    },
+    [dispatch, claim.id]
+  );
 
   return (
-    <div
+    <article
+      role="button"
+      tabIndex={0}
       onClick={handleClick}
+      onKeyDown={handleKeyDown}
+      aria-label={`Claim: ${claim.subject} ${claim.predicate} ${claim.object}. Confidence ${confidence.percentage}%. Your stance: ${stanceInfo.label}`}
+      aria-selected={isSelected}
       className={`
         p-4 border-b border-gray-100 cursor-pointer transition-colors
+        focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500
         ${isSelected ? "bg-blue-50 border-l-4 border-l-blue-500" : "hover:bg-gray-50"}
       `}
     >
@@ -28,7 +45,7 @@ export function ClaimItem({ claim, isSelected }: ClaimItemProps) {
         {/* Stance indicator */}
         <span
           className={`text-lg ${stanceInfo.colorClass}`}
-          title={stanceInfo.label}
+          aria-hidden="true"
         >
           {stanceInfo.symbol}
         </span>
@@ -48,8 +65,15 @@ export function ClaimItem({ claim, isSelected }: ClaimItemProps) {
           <div className="flex items-center gap-4 text-xs text-gray-500">
             {/* Confidence bar */}
             <div className="flex items-center gap-1.5">
-              <span>Confidence:</span>
-              <div className="w-16 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+              <span id={`confidence-label-${claim.id}`}>Confidence:</span>
+              <div
+                className="w-16 h-1.5 bg-gray-200 rounded-full overflow-hidden"
+                role="progressbar"
+                aria-valuenow={confidence.percentage}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-labelledby={`confidence-label-${claim.id}`}
+              >
                 <div
                   className="h-full bg-green-500 rounded-full"
                   style={{ width: confidence.barWidth }}
@@ -59,13 +83,15 @@ export function ClaimItem({ claim, isSelected }: ClaimItemProps) {
             </div>
 
             {/* Date */}
-            <span>{formatRelativeDate(claim.extracted_at)}</span>
+            <time dateTime={new Date(claim.extracted_at).toISOString()}>
+              {formatRelativeDate(claim.extracted_at)}
+            </time>
           </div>
         </div>
 
         {/* Arrow indicator */}
-        <span className="text-gray-400 text-sm">→</span>
+        <span className="text-gray-400 text-sm" aria-hidden="true">→</span>
       </div>
-    </div>
+    </article>
   );
-}
+});
