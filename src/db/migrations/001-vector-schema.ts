@@ -25,7 +25,23 @@ export async function migrateVectorSchema(
 
   try {
     // Apply core vector schema (fields and relations)
-    await db.query(VECTOR_SCHEMA);
+    // Split into individual statements and ignore "already exists" errors
+    const statements = VECTOR_SCHEMA
+      .split(";")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0 && !s.startsWith("--"));
+
+    for (const statement of statements) {
+      try {
+        await db.query(statement);
+      } catch (error) {
+        // Ignore "already exists" errors
+        const message = error instanceof Error ? error.message : String(error);
+        if (!message.includes("already exists")) {
+          throw error;
+        }
+      }
+    }
     console.log("  Vector fields and relations applied");
 
     // Try to apply vector index (may fail on older SurrealDB versions)
@@ -36,13 +52,18 @@ export async function migrateVectorSchema(
     } catch (indexError) {
       // Vector index syntax varies between SurrealDB versions
       // Log warning but don't fail - similarity search will still work (just slower)
-      console.warn(
-        "  Warning: Could not create vector index. Similarity search will work but may be slower.",
-      );
-      console.warn(
-        "  This is expected on SurrealDB versions < 2.0. Error:",
-        indexError instanceof Error ? indexError.message : String(indexError),
-      );
+      const message = indexError instanceof Error ? indexError.message : String(indexError);
+      if (!message.includes("already exists")) {
+        console.warn(
+          "  Warning: Could not create vector index. Similarity search will work but may be slower.",
+        );
+        console.warn(
+          "  This is expected on SurrealDB versions < 2.0. Error:",
+          message,
+        );
+      } else {
+        console.log("  Vector index already exists");
+      }
     }
 
     console.log("Vector schema migration completed successfully");

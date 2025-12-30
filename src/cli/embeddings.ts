@@ -8,6 +8,7 @@
  *   bun run embeddings stats        - Show embedding statistics
  */
 
+import "../env";
 import { program } from "commander";
 import { loadConfig } from "../config";
 import { getDb, closeDb } from "../db";

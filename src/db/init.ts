@@ -1,3 +1,4 @@
+import "../env";
 import { loadConfig } from "../config";
 import { getDb, closeDb } from "./index";
 import { SCHEMA, SEED_PREDICATES } from "./schema";

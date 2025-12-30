@@ -3,6 +3,7 @@
  * CLI for detecting and managing contradicting claims.
  */
 
+import "../env";
 import { Command } from "commander";
 import { loadConfig } from "../config";
 import { getDb, closeDb } from "../db";

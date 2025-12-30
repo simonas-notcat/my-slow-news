@@ -1,6 +1,7 @@
 // My Slow News - Entry Point
 // This file can be used for development/testing
 
+import "./env";
 import { loadConfig } from "./config";
 import { mastra } from "./mastra";
 

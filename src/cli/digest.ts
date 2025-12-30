@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import "../env";
 import { program } from "commander";
 import { runDigestWorkflow, type DigestOutput } from "../workflows/digest";
 import { closeDb } from "../db";
