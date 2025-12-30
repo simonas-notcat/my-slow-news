@@ -102,7 +102,11 @@ describe("Semantic Analysis Configuration", () => {
     test("should use default values for related claims config", () => {
       const config = {
         semantic: {
-          related_in_digest: { enabled: true },
+          related_in_digest: { enabled: true } as {
+            enabled: boolean;
+            per_claim_limit?: number;
+            min_similarity?: number;
+          },
         },
       };
 
@@ -138,7 +142,12 @@ describe("Semantic Analysis Configuration", () => {
     test("should use default values for contradictions config", () => {
       const config = {
         semantic: {
-          contradictions: { enabled: true },
+          contradictions: { enabled: true } as {
+            enabled: boolean;
+            min_similarity?: number;
+            use_llm_verification?: boolean;
+            max_in_digest?: number;
+          },
         },
       };
 
@@ -207,7 +216,7 @@ describe("Semantic Analysis Configuration", () => {
     test("should not skip for ollama provider even without OPENAI_API_KEY", () => {
       delete process.env.OPENAI_API_KEY;
 
-      const provider = "ollama";
+      const provider: string = "ollama";
       const shouldSkip = provider === "openai" && !process.env.OPENAI_API_KEY;
 
       expect(shouldSkip).toBe(false);
