@@ -86,8 +86,8 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
           try {
             await db.close();
           } catch (error) {
-            // Ignore errors during cleanup (component unmounted)
-            console.debug("DB cleanup error:", error);
+            // Log errors during cleanup for better visibility during development
+            console.warn("DB cleanup error:", error);
           }
         })();
       }
