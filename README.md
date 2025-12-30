@@ -9,12 +9,40 @@ Instead of consuming news in real-time, My Slow News creates thoughtful daily su
 - **Daily Digests**: Automated summaries of top Reddit posts from your configured subreddits
 - **Knowledge Extraction**: AI extracts factual claims as RDF-style triples (subject, predicate, object)
 - **Interactive Explorer**: Terminal-based UI with vim-style navigation, filtering, and inline stance recording
+- **Web Explorer**: Browser-based UI for exploring claims (deployable to Vercel)
 - **Stance Tracking**: Record and track your opinions on claims over time
 - **Knowledge Graph**: Build a personal knowledge base stored in SurrealDB
 - **No Authentication**: Uses RSS feeds and web scraping - no Reddit API credentials needed
 - **Advanced Summarization**: Thread-aware hierarchical summarization, controversy detection, and cross-post theme synthesis
 - **Link Fetching**: Automatically fetches and summarizes external link content
 - **Budget Tracking**: Monitor and control daily LLM API usage costs
+
+## Web Explorer
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fsimonas-notcat%2Fmy-slow-news&root-directory=web&project-name=my-slow-news-explorer&repository-name=my-slow-news)
+
+The web explorer provides a browser-based interface for exploring your knowledge base. It connects directly to your SurrealDB instance.
+
+### Local Development
+
+```bash
+# Install dependencies
+npm run web:install
+
+# Start development server (http://localhost:3000)
+npm run web
+
+# Build for production
+npm run web:build
+```
+
+### Deploy to Vercel
+
+1. Click the "Deploy with Vercel" button above
+2. Set the root directory to `web`
+3. Deploy and connect to your SurrealDB instance
+
+> **Note**: The web app connects directly to SurrealDB from the browser. For production use, ensure your SurrealDB instance is accessible via `wss://` and consider adding a backend API layer for credential security.
 
 ## ⚠️ Legal Disclaimer
 
@@ -44,7 +72,60 @@ Instead of consuming news in real-time, My Slow News creates thoughtful daily su
 
 - [Bun](https://bun.sh/) installed
 - [Docker](https://www.docker.com/) and Docker Compose installed
-- Anthropic API key ([get one here](https://console.anthropic.com/))
+- Anthropic API key (see below)
+
+## Getting API Keys & Services
+
+### Anthropic (Required)
+
+Anthropic provides the Claude AI models used for summarization and claim extraction.
+
+1. Go to [console.anthropic.com](https://console.anthropic.com/)
+2. Sign up for an account
+3. Navigate to **API Keys** and create a new key
+4. Copy the key (starts with `sk-ant-`)
+5. Add to your `.env` file as `ANTHROPIC_API_KEY`
+
+**Pricing**: Pay-as-you-go. Claude Sonnet costs ~$3/million input tokens, ~$15/million output tokens. A typical daily digest costs $0.05-0.20 depending on content volume.
+
+### SurrealDB (Required)
+
+SurrealDB is the graph database that stores claims and stances.
+
+#### Option 1: Local Docker (Recommended for Development)
+
+```bash
+docker-compose up surrealdb -d
+```
+
+No signup required. Data persists in a Docker volume.
+
+#### Option 2: Surreal Cloud (Recommended for Production)
+
+1. Go to [surrealdb.com/cloud](https://surrealdb.com/cloud)
+2. Sign up and create a new instance
+3. Choose a region and instance size (free tier available)
+4. Copy your connection URL (e.g., `wss://your-instance.surrealdb.cloud/rpc`)
+5. Set your namespace, database, username, and password
+6. Add to `.env`:
+   ```
+   DATABASE_URL=wss://your-instance.surrealdb.cloud/rpc
+   SURREALDB_USERNAME=your-username
+   SURREALDB_PASSWORD=your-password
+   ```
+
+**Pricing**: Free tier includes 1GB storage. Paid plans start at $29/month.
+
+### OpenAI (Optional)
+
+Only required if you enable semantic features like claim deduplication or contradiction detection.
+
+1. Go to [platform.openai.com](https://platform.openai.com/)
+2. Sign up and navigate to **API Keys**
+3. Create a new secret key
+4. Add to your `.env` file as `OPENAI_API_KEY`
+
+**Pricing**: Embeddings (text-embedding-3-small) cost ~$0.02/million tokens.
 
 ## Quick Start
 
