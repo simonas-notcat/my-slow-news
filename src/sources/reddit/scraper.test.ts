@@ -2,7 +2,7 @@
  * Tests for Reddit HTML scraper
  */
 
-import { describe, test, expect, beforeEach, afterEach, mock } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach, vi } from "vitest";
 import { scrapePostDetails } from "./scraper";
 import { globalRateLimiter } from "../utils/rate-limiter";
 
@@ -122,10 +122,10 @@ const invalidHTML = `
 `;
 
 describe("Reddit Scraper", () => {
-  let mockFetch: ReturnType<typeof mock>;
+  let mockFetch: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    mockFetch = mock(() => Promise.resolve(new Response(samplePostHTML)));
+    mockFetch = vi.fn(() => Promise.resolve(new Response(samplePostHTML)));
     globalThis.fetch = mockFetch as unknown as typeof fetch;
     globalRateLimiter.reset();
   });

@@ -21,8 +21,11 @@ dist/
 .DS_Store
 Thumbs.db
 
-# Bun
-bun.lockb
+# npm
+# package-lock.json (uncomment if you don't want to track it)
+
+# Vitest
+coverage/
 
 # Logs
 *.log

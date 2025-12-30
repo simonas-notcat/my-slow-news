@@ -1,4 +1,4 @@
-import { describe, test, expect, mock, beforeEach } from "bun:test";
+import { describe, test, expect, vi, beforeEach } from "vitest";
 import { saveStance, removeStance } from "./stanceOperations.js";
 
 describe("stanceOperations", () => {
@@ -6,7 +6,7 @@ describe("stanceOperations", () => {
 
   beforeEach(() => {
     mockDb = {
-      query: mock(() => Promise.resolve([[]])),
+      query: vi.fn(() => Promise.resolve([[]])),
     };
   });
 

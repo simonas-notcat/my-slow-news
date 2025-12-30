@@ -1,14 +1,14 @@
-import { describe, test, expect, mock, beforeEach, afterEach } from "bun:test";
+import { describe, test, expect, vi, beforeEach, afterEach } from "vitest";
 import { fetchSubredditRSS } from "./rss-fetcher";
 
 // Store original fetch
 const originalFetch = globalThis.fetch;
 
 describe("fetchSubredditRSS", () => {
-  let mockFetch: ReturnType<typeof mock>;
+  let mockFetch: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    mockFetch = mock(() => Promise.resolve(new Response("")));
+    mockFetch = vi.fn(() => Promise.resolve(new Response("")));
     globalThis.fetch = mockFetch as unknown as typeof fetch;
   });
 

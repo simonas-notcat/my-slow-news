@@ -1,17 +1,17 @@
-import { describe, test, expect, mock, beforeEach } from "bun:test";
+import { describe, test, expect, vi, beforeEach } from "vitest";
 import { ContradictionDetectionService } from "./service";
 import type Surreal from "surrealdb";
 import type { ClaimRecord } from "../../types";
 
 describe("ContradictionDetectionService", () => {
   const mockDb = {
-    query: mock(() => Promise.resolve([[]])),
+    query: vi.fn(() => Promise.resolve([[]])),
   } as unknown as Surreal;
 
   let service: ContradictionDetectionService;
 
   beforeEach(() => {
-    (mockDb.query as ReturnType<typeof mock>).mockClear();
+    (mockDb.query as ReturnType<typeof vi.fn>).mockClear();
     service = new ContradictionDetectionService(mockDb);
   });
 
@@ -40,7 +40,7 @@ describe("ContradictionDetectionService", () => {
         },
       ];
 
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([claims])
       );
 
@@ -77,7 +77,7 @@ describe("ContradictionDetectionService", () => {
         },
       ];
 
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([claims])
       );
 
@@ -113,7 +113,7 @@ describe("ContradictionDetectionService", () => {
         },
       ];
 
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([claims])
       );
 
@@ -125,7 +125,7 @@ describe("ContradictionDetectionService", () => {
     });
 
     test("returns empty array when insufficient claims", async () => {
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([[{ id: "claim:1", embedding: [1, 0, 0, 0] }]])
       );
 
@@ -151,7 +151,7 @@ describe("ContradictionDetectionService", () => {
         });
       }
 
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([claims])
       );
 
@@ -189,7 +189,7 @@ describe("ContradictionDetectionService", () => {
         is_canonical: true,
       };
 
-      (mockDb.query as ReturnType<typeof mock>)
+      (mockDb.query as ReturnType<typeof vi.fn>)
         .mockImplementationOnce(() => Promise.resolve([[sourceClaim]]))
         .mockImplementationOnce(() => Promise.resolve([[contradictingClaim]]));
 
@@ -203,7 +203,7 @@ describe("ContradictionDetectionService", () => {
     });
 
     test("throws when claim not found", async () => {
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([[]])
       );
 
@@ -224,7 +224,7 @@ describe("ContradictionDetectionService", () => {
         // No embedding
       };
 
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([[claimWithoutEmbedding]])
       );
 
@@ -245,7 +245,7 @@ describe("ContradictionDetectionService", () => {
         detectedAt: new Date(),
       };
 
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([[]])
       );
 
@@ -274,7 +274,7 @@ describe("ContradictionDetectionService", () => {
         detectedAt: new Date(),
       };
 
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([[]])
       );
 
@@ -291,7 +291,7 @@ describe("ContradictionDetectionService", () => {
 
   describe("getStats", () => {
     test("returns stats with empty database", async () => {
-      (mockDb.query as ReturnType<typeof mock>)
+      (mockDb.query as ReturnType<typeof vi.fn>)
         .mockImplementationOnce(() => Promise.resolve([[]]))
         .mockImplementationOnce(() => Promise.resolve([[]])) // typeStats
         .mockImplementationOnce(() => Promise.resolve([[]]))
@@ -307,7 +307,7 @@ describe("ContradictionDetectionService", () => {
     });
 
     test("returns stats with data", async () => {
-      (mockDb.query as ReturnType<typeof mock>)
+      (mockDb.query as ReturnType<typeof vi.fn>)
         .mockImplementationOnce(() => Promise.resolve([[{ total: 10 }]]))
         .mockImplementationOnce(() =>
           Promise.resolve([
@@ -347,7 +347,7 @@ describe("ContradictionDetectionService", () => {
 
   describe("getStoredContradictions", () => {
     test("returns empty array when no contradictions stored", async () => {
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([[]])
       );
 
@@ -375,7 +375,7 @@ describe("ContradictionDetectionService", () => {
         },
       ];
 
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([stored])
       );
 
@@ -391,7 +391,7 @@ describe("ContradictionDetectionService", () => {
 
   describe("with LLM verification", () => {
     test("uses LLM verifier when provided", async () => {
-      const mockLlmVerify = mock(() =>
+      const mockLlmVerify = vi.fn(() =>
         Promise.resolve({
           isContradiction: true,
           confidence: 0.85,
@@ -427,7 +427,7 @@ describe("ContradictionDetectionService", () => {
         },
       ];
 
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([claims])
       );
 
@@ -442,7 +442,7 @@ describe("ContradictionDetectionService", () => {
     });
 
     test("skips LLM verification when disabled", async () => {
-      const mockLlmVerify = mock(() =>
+      const mockLlmVerify = vi.fn(() =>
         Promise.resolve({
           isContradiction: true,
           confidence: 0.85,
@@ -478,7 +478,7 @@ describe("ContradictionDetectionService", () => {
         },
       ];
 
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([claims])
       );
 

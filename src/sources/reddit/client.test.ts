@@ -2,17 +2,17 @@
  * Tests for Reddit client (RSS + scraping)
  */
 
-import { describe, test, expect, beforeEach, afterEach, mock } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach, vi } from "vitest";
 import { fetchSubredditPosts, fetchPostComments } from "./client";
 import type { RSSItem } from "../types";
 
 const originalFetch = globalThis.fetch;
 
 describe("Reddit Client", () => {
-  let mockFetch: ReturnType<typeof mock>;
+  let mockFetch: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    mockFetch = mock(() => Promise.resolve(new Response("{}")));
+    mockFetch = vi.fn(() => Promise.resolve(new Response("{}")));
     globalThis.fetch = mockFetch as unknown as typeof fetch;
   });
 

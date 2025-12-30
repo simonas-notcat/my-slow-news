@@ -1,10 +1,10 @@
-import { describe, test, expect, mock, beforeEach } from "bun:test";
+import { describe, test, expect, vi, beforeEach } from "vitest";
 import { ThemeClusteringService } from "./service";
 import type Surreal from "surrealdb";
 import type { ClaimRecord } from "../../types";
 
 // Mock the theme-labeler module
-const mockGenerateThemeLabels = mock(() =>
+const mockGenerateThemeLabels = vi.fn(() =>
   Promise.resolve([
     {
       name: "Test Theme",
@@ -19,19 +19,19 @@ const mockGenerateThemeLabels = mock(() =>
 
 describe("ThemeClusteringService", () => {
   const mockDb = {
-    query: mock(() => Promise.resolve([[]])),
+    query: vi.fn(() => Promise.resolve([[]])),
   } as unknown as Surreal;
 
   let service: ThemeClusteringService;
 
   beforeEach(() => {
-    (mockDb.query as ReturnType<typeof mock>).mockClear();
+    (mockDb.query as ReturnType<typeof vi.fn>).mockClear();
     service = new ThemeClusteringService(mockDb);
   });
 
   describe("clusterClaims", () => {
     test("returns empty result for insufficient claims", async () => {
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([
           [{ id: "claim:1", embedding: [1, 0, 0], is_canonical: true }],
         ])
@@ -48,7 +48,7 @@ describe("ThemeClusteringService", () => {
     });
 
     test("returns empty result for empty claims", async () => {
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([[]])
       );
 
@@ -126,7 +126,7 @@ describe("ThemeClusteringService", () => {
         },
       ];
 
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([claims])
       );
 
@@ -177,7 +177,7 @@ describe("ThemeClusteringService", () => {
         },
       ];
 
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([claims])
       );
 
@@ -226,7 +226,7 @@ describe("ThemeClusteringService", () => {
         },
       ];
 
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([claims])
       );
 
@@ -274,7 +274,7 @@ describe("ThemeClusteringService", () => {
         },
       ];
 
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([claims])
       );
 
@@ -322,7 +322,7 @@ describe("ThemeClusteringService", () => {
         },
       };
 
-      (mockDb.query as ReturnType<typeof mock>).mockImplementation(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementation(() =>
         Promise.resolve([[]])
       );
 
@@ -368,7 +368,7 @@ describe("ThemeClusteringService", () => {
         },
       ];
 
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([themes])
       );
 
@@ -379,7 +379,7 @@ describe("ThemeClusteringService", () => {
     });
 
     test("returns empty array when no themes", async () => {
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([[]])
       );
 
@@ -420,7 +420,7 @@ describe("ThemeClusteringService", () => {
         },
       ];
 
-      (mockDb.query as ReturnType<typeof mock>)
+      (mockDb.query as ReturnType<typeof vi.fn>)
         .mockImplementationOnce(() => Promise.resolve([[theme]]))
         .mockImplementationOnce(() => Promise.resolve([assignments]));
 
@@ -432,7 +432,7 @@ describe("ThemeClusteringService", () => {
     });
 
     test("returns null for non-existent theme", async () => {
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([[]])
       );
 
@@ -453,7 +453,7 @@ describe("ThemeClusteringService", () => {
         isActive: true,
       };
 
-      (mockDb.query as ReturnType<typeof mock>)
+      (mockDb.query as ReturnType<typeof vi.fn>)
         .mockImplementationOnce(() => Promise.resolve([[theme]]))
         .mockImplementationOnce(() => Promise.resolve([[]]));
 
@@ -476,7 +476,7 @@ describe("ThemeClusteringService", () => {
         },
       ];
 
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([result])
       );
 
@@ -487,7 +487,7 @@ describe("ThemeClusteringService", () => {
     });
 
     test("returns null for unclustered claim", async () => {
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([[]])
       );
 
@@ -524,7 +524,7 @@ describe("ThemeClusteringService", () => {
         },
       ];
 
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([themes])
       );
 
@@ -535,7 +535,7 @@ describe("ThemeClusteringService", () => {
     });
 
     test("respects minSimilarity threshold", async () => {
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([[]])
       );
 
@@ -562,7 +562,7 @@ describe("ThemeClusteringService", () => {
 
   describe("getStats", () => {
     test("returns stats with data", async () => {
-      (mockDb.query as ReturnType<typeof mock>)
+      (mockDb.query as ReturnType<typeof vi.fn>)
         .mockImplementationOnce(() =>
           Promise.resolve([[{ total: 5, totalClaims: 50, avgSize: 10 }]])
         )
@@ -579,7 +579,7 @@ describe("ThemeClusteringService", () => {
     });
 
     test("returns empty stats when no themes", async () => {
-      (mockDb.query as ReturnType<typeof mock>)
+      (mockDb.query as ReturnType<typeof vi.fn>)
         .mockImplementationOnce(() => Promise.resolve([[]]))
         .mockImplementationOnce(() => Promise.resolve([[]]));
 

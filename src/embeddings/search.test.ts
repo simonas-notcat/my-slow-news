@@ -1,4 +1,4 @@
-import { describe, test, expect, mock, beforeEach } from "bun:test";
+import { describe, test, expect, vi, beforeEach } from "vitest";
 import { SemanticSearchService } from "./search";
 import type { EmbeddingService } from "./index";
 import type Surreal from "surrealdb";
@@ -7,7 +7,7 @@ describe("SemanticSearchService", () => {
   const mockEmbeddingService = {
     name: "test",
     dimensions: 4,
-    embed: mock(() =>
+    embed: vi.fn(() =>
       Promise.resolve({
         text: "test query",
         embedding: [0.1, 0.2, 0.3, 0.4],
@@ -15,18 +15,18 @@ describe("SemanticSearchService", () => {
         cached: false,
       })
     ),
-    embedBatch: mock(() => Promise.resolve([])),
+    embedBatch: vi.fn(() => Promise.resolve([])),
   } as unknown as EmbeddingService;
 
   const mockDb = {
-    query: mock(() => Promise.resolve([[]])),
+    query: vi.fn(() => Promise.resolve([[]])),
   } as unknown as Surreal;
 
   let service: SemanticSearchService;
 
   beforeEach(() => {
-    (mockDb.query as ReturnType<typeof mock>).mockClear();
-    (mockEmbeddingService.embed as ReturnType<typeof mock>).mockClear();
+    (mockDb.query as ReturnType<typeof vi.fn>).mockClear();
+    (mockEmbeddingService.embed as ReturnType<typeof vi.fn>).mockClear();
     service = new SemanticSearchService(mockDb, mockEmbeddingService);
     service.resetRateLimit();
   });
@@ -53,7 +53,7 @@ describe("SemanticSearchService", () => {
           similarity: 0.8,
         },
       ];
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([mockResults])
       );
 
@@ -66,75 +66,75 @@ describe("SemanticSearchService", () => {
     });
 
     test("applies predicate filter", async () => {
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([[]])
       );
 
       await service.search("test", { filters: { predicate: "is-safer-than" } });
 
-      const queryCall = (mockDb.query as ReturnType<typeof mock>).mock.calls[0];
+      const queryCall = (mockDb.query as ReturnType<typeof vi.fn>).mock.calls[0];
       expect(queryCall[0]).toContain("predicate = $predicate");
       expect(queryCall[1].predicate).toBe("is-safer-than");
     });
 
     test("applies days filter", async () => {
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([[]])
       );
 
       await service.search("test", { filters: { days: 7 } });
 
-      const queryCall = (mockDb.query as ReturnType<typeof mock>).mock.calls[0];
+      const queryCall = (mockDb.query as ReturnType<typeof vi.fn>).mock.calls[0];
       expect(queryCall[0]).toContain("extracted_at >= $cutoff");
       expect(queryCall[1].cutoff).toBeDefined();
     });
 
     test("respects minimum similarity threshold", async () => {
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([[]])
       );
 
       await service.search("test", { minSimilarity: 0.7 });
 
-      const queryCall = (mockDb.query as ReturnType<typeof mock>).mock.calls[0];
+      const queryCall = (mockDb.query as ReturnType<typeof vi.fn>).mock.calls[0];
       expect(queryCall[1].minSimilarity).toBe(0.7);
     });
 
     test("respects limit parameter", async () => {
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([[]])
       );
 
       await service.search("test", { limit: 5 });
 
-      const queryCall = (mockDb.query as ReturnType<typeof mock>).mock.calls[0];
+      const queryCall = (mockDb.query as ReturnType<typeof vi.fn>).mock.calls[0];
       expect(queryCall[1].limit).toBe(5);
     });
 
     test("filters canonical claims by default", async () => {
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([[]])
       );
 
       await service.search("test");
 
-      const queryCall = (mockDb.query as ReturnType<typeof mock>).mock.calls[0];
+      const queryCall = (mockDb.query as ReturnType<typeof vi.fn>).mock.calls[0];
       expect(queryCall[0]).toContain("is_canonical = true");
     });
 
     test("can include non-canonical claims", async () => {
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([[]])
       );
 
       await service.search("test", { includeCanonicalOnly: false });
 
-      const queryCall = (mockDb.query as ReturnType<typeof mock>).mock.calls[0];
+      const queryCall = (mockDb.query as ReturnType<typeof vi.fn>).mock.calls[0];
       expect(queryCall[0]).not.toContain("is_canonical = true");
     });
 
     test("trims whitespace from query", async () => {
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([[]])
       );
 
@@ -175,7 +175,7 @@ describe("SemanticSearchService", () => {
           similarity: 0.8,
         },
       ];
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([mockResults])
       );
 
@@ -191,7 +191,7 @@ describe("SemanticSearchService", () => {
         { id: "claim:3", subject: "TypeScript", similarity: 0.7, confidence: 0.7, extracted_at: new Date() },
         { id: "claim:4", subject: "Python", similarity: 0.6, confidence: 0.6, extracted_at: new Date() },
       ];
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([mockResults])
       );
 
@@ -227,7 +227,7 @@ describe("SemanticSearchService", () => {
 
     test("accepts query at max length", async () => {
       const maxQuery = "a".repeat(500);
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([[]])
       );
 
@@ -254,7 +254,7 @@ describe("SemanticSearchService", () => {
     });
 
     test("accepts valid days filter", async () => {
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([[]])
       );
 
@@ -275,7 +275,7 @@ describe("SemanticSearchService", () => {
     });
 
     test("accepts valid limit", async () => {
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([[]])
       );
 
@@ -293,7 +293,7 @@ describe("SemanticSearchService", () => {
 
   describe("rate limiting", () => {
     test("allows requests within limit", async () => {
-      (mockDb.query as ReturnType<typeof mock>).mockImplementation(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementation(() =>
         Promise.resolve([[]])
       );
 
@@ -304,7 +304,7 @@ describe("SemanticSearchService", () => {
     });
 
     test("throws when rate limit exceeded", async () => {
-      (mockDb.query as ReturnType<typeof mock>).mockImplementation(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementation(() =>
         Promise.resolve([[]])
       );
 
@@ -321,7 +321,7 @@ describe("SemanticSearchService", () => {
 
     test("rate limit resets after window", async () => {
       // This is tested via resetRateLimit() helper
-      (mockDb.query as ReturnType<typeof mock>).mockImplementation(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementation(() =>
         Promise.resolve([[]])
       );
 
@@ -340,7 +340,7 @@ describe("SemanticSearchService", () => {
 
   describe("error handling", () => {
     test("handles embedding service failure", async () => {
-      (mockEmbeddingService.embed as ReturnType<typeof mock>).mockImplementationOnce(
+      (mockEmbeddingService.embed as ReturnType<typeof vi.fn>).mockImplementationOnce(
         () => Promise.reject(new Error("Embedding API error"))
       );
 
@@ -350,7 +350,7 @@ describe("SemanticSearchService", () => {
     });
 
     test("handles database query failure", async () => {
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.reject(new Error("Database error"))
       );
 
@@ -360,7 +360,7 @@ describe("SemanticSearchService", () => {
     });
 
     test("handles empty database results gracefully", async () => {
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([[]])
       );
 
@@ -370,7 +370,7 @@ describe("SemanticSearchService", () => {
     });
 
     test("handles null database results gracefully", async () => {
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([null as unknown as unknown[]])
       );
 
@@ -393,7 +393,7 @@ describe("SemanticSearchService", () => {
           similarity: 0.9,
         },
       ];
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([mockResults])
       );
 

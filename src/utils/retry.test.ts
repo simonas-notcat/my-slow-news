@@ -1,10 +1,10 @@
-import { describe, expect, test, mock, beforeEach } from "bun:test";
+import { describe, expect, test, vi, beforeEach } from "vitest";
 import { withRetry, type RetryOptions } from "./retry";
 
 describe("withRetry", () => {
   describe("successful execution", () => {
     test("returns result on first attempt success", async () => {
-      const fn = mock(() => Promise.resolve("success"));
+      const fn = vi.fn(() => Promise.resolve("success"));
 
       const result = await withRetry(fn);
 
@@ -14,7 +14,7 @@ describe("withRetry", () => {
 
     test("returns result after retries", async () => {
       let attempts = 0;
-      const fn = mock(() => {
+      const fn = vi.fn(() => {
         attempts++;
         if (attempts < 3) {
           return Promise.reject(new Error("rate_limit error"));
@@ -35,7 +35,7 @@ describe("withRetry", () => {
   describe("retry behavior", () => {
     test("retries on retryable errors", async () => {
       let attempts = 0;
-      const fn = mock(() => {
+      const fn = vi.fn(() => {
         attempts++;
         if (attempts < 2) {
           return Promise.reject(new Error("timeout occurred"));
@@ -50,7 +50,7 @@ describe("withRetry", () => {
     });
 
     test("does not retry on non-retryable errors", async () => {
-      const fn = mock(() => Promise.reject(new Error("validation failed")));
+      const fn = vi.fn(() => Promise.reject(new Error("validation failed")));
 
       await expect(withRetry(fn, { initialDelayMs: 10 })).rejects.toThrow(
         "validation failed"
@@ -59,7 +59,7 @@ describe("withRetry", () => {
     });
 
     test("respects maxAttempts", async () => {
-      const fn = mock(() => Promise.reject(new Error("rate_limit")));
+      const fn = vi.fn(() => Promise.reject(new Error("rate_limit")));
 
       await expect(
         withRetry(fn, { maxAttempts: 2, initialDelayMs: 10 })
@@ -69,7 +69,7 @@ describe("withRetry", () => {
 
     test("uses custom retryableErrors", async () => {
       let attempts = 0;
-      const fn = mock(() => {
+      const fn = vi.fn(() => {
         attempts++;
         if (attempts < 2) {
           return Promise.reject(new Error("custom_error"));
@@ -90,7 +90,7 @@ describe("withRetry", () => {
     test("applies exponential backoff", async () => {
       const delays: number[] = [];
       let attempts = 0;
-      const fn = mock(() => {
+      const fn = vi.fn(() => {
         attempts++;
         if (attempts <= 3) {
           return Promise.reject(new Error("rate_limit"));
@@ -98,7 +98,7 @@ describe("withRetry", () => {
         return Promise.resolve("ok");
       });
 
-      const onRetry = mock((error: Error, attempt: number, delay: number) => {
+      const onRetry = vi.fn((error: Error, attempt: number, delay: number) => {
         delays.push(delay);
       });
 
@@ -116,7 +116,7 @@ describe("withRetry", () => {
     test("respects maxDelayMs", async () => {
       const delays: number[] = [];
       let attempts = 0;
-      const fn = mock(() => {
+      const fn = vi.fn(() => {
         attempts++;
         if (attempts <= 3) {
           return Promise.reject(new Error("rate_limit"));
@@ -124,7 +124,7 @@ describe("withRetry", () => {
         return Promise.resolve("ok");
       });
 
-      const onRetry = mock((error: Error, attempt: number, delay: number) => {
+      const onRetry = vi.fn((error: Error, attempt: number, delay: number) => {
         delays.push(delay);
       });
 
@@ -146,7 +146,7 @@ describe("withRetry", () => {
   describe("onRetry callback", () => {
     test("calls onRetry with correct parameters", async () => {
       let attempts = 0;
-      const fn = mock(() => {
+      const fn = vi.fn(() => {
         attempts++;
         if (attempts < 2) {
           return Promise.reject(new Error("503 error"));
@@ -154,7 +154,7 @@ describe("withRetry", () => {
         return Promise.resolve("ok");
       });
 
-      const onRetry = mock(
+      const onRetry = vi.fn(
         (error: Error, attempt: number, delayMs: number) => {}
       );
 
@@ -170,8 +170,8 @@ describe("withRetry", () => {
     });
 
     test("does not call onRetry on first attempt success", async () => {
-      const fn = mock(() => Promise.resolve("ok"));
-      const onRetry = mock(() => {});
+      const fn = vi.fn(() => Promise.resolve("ok"));
+      const onRetry = vi.fn(() => {});
 
       await withRetry(fn, { onRetry });
 
@@ -181,7 +181,7 @@ describe("withRetry", () => {
 
   describe("error handling", () => {
     test("converts non-Error throws to Error", async () => {
-      const fn = mock(() => Promise.reject("string error"));
+      const fn = vi.fn(() => Promise.reject("string error"));
 
       await expect(withRetry(fn, { initialDelayMs: 10 })).rejects.toThrow(
         "string error"
@@ -199,7 +199,7 @@ describe("withRetry", () => {
         }
       }
 
-      const fn = mock(() =>
+      const fn = vi.fn(() =>
         Promise.reject(new CustomError("custom error", 500))
       );
 
@@ -230,7 +230,7 @@ describe("withRetry", () => {
     for (const pattern of retryablePatterns) {
       test(`retries on ${pattern} error`, async () => {
         let attempts = 0;
-        const fn = mock(() => {
+        const fn = vi.fn(() => {
           attempts++;
           if (attempts < 2) {
             return Promise.reject(new Error(`Error: ${pattern} occurred`));
