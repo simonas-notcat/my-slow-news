@@ -15,7 +15,8 @@ This file provides guidance for AI assistants working with this codebase.
 
 ## Tech Stack
 
-- **Runtime**: Bun (TypeScript)
+- **Runtime**: Node.js 20 LTS with tsx
+- **Test Framework**: Vitest
 - **AI Framework**: Mastra (`@mastra/core`)
 - **LLM**: Anthropic Claude (anthropic/claude-sonnet-4-20250514)
 - **Database**: SurrealDB (graph database)
@@ -86,39 +87,39 @@ src/
 
 ```bash
 # Install dependencies
-bun install
+npm install
 
 # Initialize database schema
-bun run db:init
+npm run db:init
 
 # Generate today's digest
-bun run digest
+npm run digest
 
 # Generate digest for specific date
-bun run digest -d 2025-01-15
+npm run digest -- -d 2025-01-15
 
 # Generate digest for date range
-bun run digest --from 2025-01-01 --to 2025-01-07
+npm run digest -- --from 2025-01-01 --to 2025-01-07
 
 # Record your stance on a claim
-bun run stance "Rust is-safer-than C++" agree -n "Memory safety by default"
+npm run stance -- "Rust is-safer-than C++" agree -n "Memory safety by default"
 
 # Interactive data explorer (new - replaces query subcommands)
-bun run query                    # Launch interactive explorer
-bun run query -d 7               # Start with 7-day filter
-bun run query -s Rust            # Pre-filter by subject
-bun run query -p is-better-than  # Pre-filter by predicate
+npm run query                    # Launch interactive explorer
+npm run query -- -d 7            # Start with 7-day filter
+npm run query -- -s Rust         # Pre-filter by subject
+npm run query -- -p is-better-than  # Pre-filter by predicate
 
 # Legacy query commands (deprecated, use interactive explorer instead)
-bun run query:legacy claims -s "Rust" -d 30
-bun run query:legacy themes programming -d 30
-bun run query:legacy my-stances
+npm run query:legacy -- claims -s "Rust" -d 30
+npm run query:legacy -- themes programming -d 30
+npm run query:legacy -- my-stances
 
 # View predicate ontology
-bun run predicates --all
+npm run predicates -- --all
 
 # Development mode with watch
-bun run dev
+npm run dev
 ```
 
 ## Environment Variables
@@ -286,43 +287,43 @@ docker-compose up surrealdb -d
 docker-compose up cron -d
 ```
 
-The cron service runs `bun run digest` daily at 07:00.
+The cron service runs `npm run digest` daily at 07:00.
 
 ## Testing
 
-Tests use Bun's built-in test runner. Run with `bun test` or `bun run test:ci` for CI mode.
+Tests use Vitest. Run with `npm test` or `npm run test:ci` for CI mode.
 
 ### Test File Locations
 - Tests are co-located with source files using `.test.ts` suffix
 - Example: `src/utils/retry.ts` → `src/utils/retry.test.ts`
 
-### Writing Tests for Bun
-
-**DO NOT use Node.js-specific APIs** - Bun's module system differs from Node.js:
+### Writing Tests for Vitest
 
 ```typescript
-// ❌ WRONG - Node.js APIs don't work in Bun
-delete require.cache[require.resolve("./module")];
-const mod = await import("./module");
+import { describe, test, expect, vi, beforeEach, afterEach } from "vitest";
 
-// ✅ CORRECT - Use direct imports
-import { myFunction } from "./module";
+describe("my tests", () => {
+  test("does something", () => {
+    const mockFn = vi.fn(() => "value");
+    expect(mockFn()).toBe("value");
+  });
+});
 ```
 
 ### Mocking Fetch
 
-Mock `globalThis.fetch` for HTTP tests (use `globalThis`, not `global`):
+Mock `globalThis.fetch` for HTTP tests:
 
 ```typescript
-import { describe, test, mock, beforeEach, afterEach } from "bun:test";
+import { describe, test, vi, beforeEach, afterEach } from "vitest";
 
 const originalFetch = globalThis.fetch;
 
 describe("my tests", () => {
-  let mockFetch: ReturnType<typeof mock>;
+  let mockFetch: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    mockFetch = mock(() => Promise.resolve(new Response("{}")));
+    mockFetch = vi.fn(() => Promise.resolve(new Response("{}")));
     globalThis.fetch = mockFetch as unknown as typeof fetch;
   });
 
@@ -344,9 +345,8 @@ describe("my tests", () => {
 - **Reset state between tests**: Use `beforeEach` to reset module state (e.g., `resetUsageTracker()`, `clearCachedToken()`)
 - **Mock external dependencies**: Never make real API calls in tests
 - **Type assertions for mock calls**: Use `as [string, RequestInit]` for mock call arguments
-- **Mock fetch type assertion**: Use `as unknown as typeof fetch` (Bun's fetch has extra properties like `preconnect`)
+- **Mock fetch type assertion**: Use `as unknown as typeof fetch`
 - **Test error cases**: Always test error handling paths
-- **Avoid Jest-specific APIs**: Don't use `expect.unreachable()` - use standard `throw new Error()` instead
 - **Clear cached state**: Modules with global state (like token caching) need reset functions for testing
 
 ### Existing Test Coverage

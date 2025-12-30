@@ -1,14 +1,14 @@
-import { describe, test, expect, mock, beforeEach, afterEach } from "bun:test";
+import { describe, test, expect, vi, beforeEach, afterEach } from "vitest";
 import { OpenAIEmbeddingProvider } from "./openai";
 
 describe("OpenAIEmbeddingProvider", () => {
   const originalFetch = globalThis.fetch;
   const originalEnv = process.env.OPENAI_API_KEY;
-  let mockFetch: ReturnType<typeof mock>;
+  let mockFetch: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     process.env.OPENAI_API_KEY = "test-api-key";
-    mockFetch = mock(() =>
+    mockFetch = vi.fn(() =>
       Promise.resolve(
         new Response(
           JSON.stringify({

@@ -2,10 +2,10 @@ import {
   describe,
   test,
   expect,
-  mock,
+  vi,
   beforeEach,
   afterEach,
-} from "bun:test";
+} from "vitest";
 import {
   EmbeddingService,
   getEmbeddingService,
@@ -17,7 +17,7 @@ describe("EmbeddingService", () => {
   const originalFetch = globalThis.fetch;
   const originalOpenAIKey = process.env.OPENAI_API_KEY;
   const originalOllamaUrl = process.env.OLLAMA_BASE_URL;
-  let mockFetch: ReturnType<typeof mock>;
+  let mockFetch: ReturnType<typeof vi.fn>;
 
   const openaiConfig: EmbeddingConfig = {
     provider: "openai",
@@ -38,7 +38,7 @@ describe("EmbeddingService", () => {
   beforeEach(() => {
     process.env.OPENAI_API_KEY = "test-api-key";
     process.env.OLLAMA_BASE_URL = "http://localhost:11434";
-    mockFetch = mock(() =>
+    mockFetch = vi.fn(() =>
       Promise.resolve(
         new Response(
           JSON.stringify({

@@ -1,4 +1,4 @@
-import { describe, test, expect, mock, beforeEach } from "bun:test";
+import { describe, test, expect, vi, beforeEach } from "vitest";
 import {
   cosineSimilarity,
   euclideanDistance,
@@ -144,10 +144,10 @@ describe("normalizeVector", () => {
 
 describe("findSimilarClaims", () => {
   let mockDb: Surreal;
-  let mockQuery: ReturnType<typeof mock>;
+  let mockQuery: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    mockQuery = mock(() => Promise.resolve([[]]));
+    mockQuery = vi.fn(() => Promise.resolve([[]]));
     mockDb = {
       query: mockQuery,
     } as unknown as Surreal;

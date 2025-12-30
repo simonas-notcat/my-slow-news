@@ -1,25 +1,25 @@
-FROM oven/bun:1 AS base
+FROM node:20-alpine AS base
 WORKDIR /app
 
 # Install dependencies
 FROM base AS install
-COPY package.json bun.lock* ./
-RUN bun install --frozen-lockfile || bun install
+COPY package.json package-lock.json ./
+RUN npm ci --only=production
 
-# Build stage
-FROM base AS build
-COPY --from=install /app/node_modules node_modules
-COPY . .
+# Development dependencies (for tsx)
+FROM base AS install-dev
+COPY package.json package-lock.json ./
+RUN npm ci
 
 # Production stage
 FROM base AS release
 COPY --from=install /app/node_modules node_modules
-COPY --from=build /app/src src
-COPY --from=build /app/package.json .
-COPY --from=build /app/tsconfig.json .
+COPY src src
+COPY package.json .
+COPY tsconfig.json .
 
 # Create digests directory
 RUN mkdir -p /app/digests
 
 # Default command
-CMD ["bun", "run", "digest"]
+CMD ["npm", "run", "digest"]

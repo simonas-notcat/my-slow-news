@@ -1,4 +1,4 @@
-import { describe, test, expect, mock, beforeEach } from "bun:test";
+import { describe, test, expect, vi, beforeEach } from "vitest";
 import {
   ClaimDeduplicationService,
   type DeduplicationConfig,
@@ -10,12 +10,12 @@ import type { ClaimRecord } from "../types";
 describe("ClaimDeduplicationService", () => {
   // Mock embedding service
   let mockEmbeddingService: EmbeddingService;
-  let mockEmbed: ReturnType<typeof mock>;
-  let mockEmbedBatch: ReturnType<typeof mock>;
+  let mockEmbed: ReturnType<typeof vi.fn>;
+  let mockEmbedBatch: ReturnType<typeof vi.fn>;
 
   // Mock database
   let mockDb: Surreal;
-  let mockQuery: ReturnType<typeof mock>;
+  let mockQuery: ReturnType<typeof vi.fn>;
 
   const config: DeduplicationConfig = {
     duplicateThreshold: 0.92,
@@ -24,7 +24,7 @@ describe("ClaimDeduplicationService", () => {
 
   beforeEach(() => {
     // Reset mocks
-    mockEmbed = mock(() =>
+    mockEmbed = vi.fn(() =>
       Promise.resolve({
         text: "test",
         embedding: [0.1, 0.2, 0.3, 0.4],
@@ -33,7 +33,7 @@ describe("ClaimDeduplicationService", () => {
       }),
     );
 
-    mockEmbedBatch = mock(() =>
+    mockEmbedBatch = vi.fn(() =>
       Promise.resolve([
         {
           text: "test",
@@ -51,7 +51,7 @@ describe("ClaimDeduplicationService", () => {
       embedBatch: mockEmbedBatch,
     } as unknown as EmbeddingService;
 
-    mockQuery = mock(() => Promise.resolve([[]]));
+    mockQuery = vi.fn(() => Promise.resolve([[]]));
     mockDb = {
       query: mockQuery,
     } as unknown as Surreal;

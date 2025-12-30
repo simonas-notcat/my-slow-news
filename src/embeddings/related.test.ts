@@ -1,23 +1,23 @@
-import { describe, test, expect, mock, beforeEach } from "bun:test";
+import { describe, test, expect, vi, beforeEach } from "vitest";
 import { RelatedClaimsService } from "./related";
 import type Surreal from "surrealdb";
 import type { ClaimRecord } from "../types";
 
 describe("RelatedClaimsService", () => {
   const mockDb = {
-    query: mock(() => Promise.resolve([[]])),
+    query: vi.fn(() => Promise.resolve([[]])),
   } as unknown as Surreal;
 
   let service: RelatedClaimsService;
 
   beforeEach(() => {
-    (mockDb.query as ReturnType<typeof mock>).mockClear();
+    (mockDb.query as ReturnType<typeof vi.fn>).mockClear();
     service = new RelatedClaimsService(mockDb);
   });
 
   describe("findRelated", () => {
     test("throws when claim not found", async () => {
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([[]])
       );
 
@@ -59,7 +59,7 @@ describe("RelatedClaimsService", () => {
         },
       ];
 
-      (mockDb.query as ReturnType<typeof mock>)
+      (mockDb.query as ReturnType<typeof vi.fn>)
         .mockImplementationOnce(() => Promise.resolve([[sourceClaim]])) // Source claim
         .mockImplementationOnce(() => Promise.resolve([[]])) // Duplicates
         .mockImplementationOnce(() => Promise.resolve([relatedClaims])); // Related
@@ -93,7 +93,7 @@ describe("RelatedClaimsService", () => {
         },
       ];
 
-      (mockDb.query as ReturnType<typeof mock>)
+      (mockDb.query as ReturnType<typeof vi.fn>)
         .mockImplementationOnce(() => Promise.resolve([[sourceClaim]]))
         .mockImplementationOnce(() => Promise.resolve([sameSubjectClaims])) // Same subject
         .mockImplementationOnce(() => Promise.resolve([[]])) // Same predicate
@@ -120,7 +120,7 @@ describe("RelatedClaimsService", () => {
 
       const duplicates = [{ id: "claim:dup" }];
 
-      (mockDb.query as ReturnType<typeof mock>)
+      (mockDb.query as ReturnType<typeof vi.fn>)
         .mockImplementationOnce(() => Promise.resolve([[sourceClaim]]))
         .mockImplementationOnce(() => Promise.resolve([duplicates]))
         .mockImplementationOnce(() => Promise.resolve([[]]));
@@ -128,7 +128,7 @@ describe("RelatedClaimsService", () => {
       await service.findRelated("claim:1", { excludeDuplicates: true });
 
       // Verify duplicates were excluded in the query
-      const queryCall = (mockDb.query as ReturnType<typeof mock>).mock.calls[2];
+      const queryCall = (mockDb.query as ReturnType<typeof vi.fn>).mock.calls[2];
       expect(queryCall[1].excludeIds).toContain("claim:dup");
     });
 
@@ -156,7 +156,7 @@ describe("RelatedClaimsService", () => {
           similarity: 0.9 - i * 0.01,
         }));
 
-      (mockDb.query as ReturnType<typeof mock>)
+      (mockDb.query as ReturnType<typeof vi.fn>)
         .mockImplementationOnce(() => Promise.resolve([[sourceClaim]]))
         .mockImplementationOnce(() => Promise.resolve([[]]))
         .mockImplementationOnce(() => Promise.resolve([manyRelatedClaims]));
@@ -178,7 +178,7 @@ describe("RelatedClaimsService", () => {
         is_canonical: true,
       };
 
-      (mockDb.query as ReturnType<typeof mock>)
+      (mockDb.query as ReturnType<typeof vi.fn>)
         .mockImplementationOnce(() => Promise.resolve([[sourceClaim]]))
         .mockImplementationOnce(() => Promise.resolve([[]]))
         .mockImplementationOnce(() => Promise.resolve([[]]));
@@ -186,7 +186,7 @@ describe("RelatedClaimsService", () => {
       await service.findRelated("claim:1", { minSimilarity: 0.8 });
 
       // Verify minSimilarity was passed to the query
-      const queryCall = (mockDb.query as ReturnType<typeof mock>).mock.calls[2];
+      const queryCall = (mockDb.query as ReturnType<typeof vi.fn>).mock.calls[2];
       expect(queryCall[1].minSimilarity).toBe(0.8);
     });
   });
@@ -243,7 +243,7 @@ describe("RelatedClaimsService", () => {
         }, // similar
       ];
 
-      (mockDb.query as ReturnType<typeof mock>)
+      (mockDb.query as ReturnType<typeof vi.fn>)
         .mockImplementationOnce(() => Promise.resolve([[sourceClaim]]))
         .mockImplementationOnce(() => Promise.resolve([[]]))
         .mockImplementationOnce(() => Promise.resolve([relatedClaims]));
@@ -281,7 +281,7 @@ describe("RelatedClaimsService", () => {
           similarity: 0.9 - i * 0.01,
         }));
 
-      (mockDb.query as ReturnType<typeof mock>)
+      (mockDb.query as ReturnType<typeof vi.fn>)
         .mockImplementationOnce(() => Promise.resolve([[sourceClaim]]))
         .mockImplementationOnce(() => Promise.resolve([[]]))
         .mockImplementationOnce(() => Promise.resolve([manyRelatedClaims]));
@@ -357,7 +357,7 @@ describe("RelatedClaimsService", () => {
         is_canonical: true,
       };
 
-      (mockDb.query as ReturnType<typeof mock>).mockImplementation(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementation(() =>
         Promise.resolve([[mockClaim]])
       );
 
@@ -371,7 +371,7 @@ describe("RelatedClaimsService", () => {
     test("handles errors gracefully in batch", async () => {
       const claimIds = ["claim:1", "claim:error", "claim:3"];
 
-      (mockDb.query as ReturnType<typeof mock>)
+      (mockDb.query as ReturnType<typeof vi.fn>)
         .mockImplementationOnce(() =>
           Promise.resolve([
             [
@@ -433,7 +433,7 @@ describe("RelatedClaimsService", () => {
         is_canonical: true,
       };
 
-      (mockDb.query as ReturnType<typeof mock>).mockImplementation(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementation(() =>
         Promise.resolve([[mockClaim]])
       );
 
@@ -457,7 +457,7 @@ describe("RelatedClaimsService", () => {
     });
 
     test("accepts valid claim ID format", async () => {
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([[]])
       );
 
@@ -470,7 +470,7 @@ describe("RelatedClaimsService", () => {
 
   describe("error handling", () => {
     test("throws for non-existent claim", async () => {
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.resolve([[]])
       ); // No claim found
 
@@ -480,7 +480,7 @@ describe("RelatedClaimsService", () => {
     });
 
     test("handles database query failure", async () => {
-      (mockDb.query as ReturnType<typeof mock>).mockImplementationOnce(() =>
+      (mockDb.query as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
         Promise.reject(new Error("Database error"))
       );
 
@@ -501,7 +501,7 @@ describe("RelatedClaimsService", () => {
         // No embedding field
       };
 
-      (mockDb.query as ReturnType<typeof mock>)
+      (mockDb.query as ReturnType<typeof vi.fn>)
         .mockImplementationOnce(() => Promise.resolve([[claimWithoutEmbedding]]))
         .mockImplementation(() => Promise.resolve([[]])); // Structural search returns empty
 
@@ -543,7 +543,7 @@ describe("RelatedClaimsService", () => {
         },
       ];
 
-      (mockDb.query as ReturnType<typeof mock>)
+      (mockDb.query as ReturnType<typeof vi.fn>)
         .mockImplementationOnce(() => Promise.resolve([[sourceClaim]]))
         .mockImplementationOnce(() => Promise.resolve([sameSubjectClaims]))
         .mockImplementationOnce(() => Promise.resolve([[]]))
@@ -577,7 +577,7 @@ describe("RelatedClaimsService", () => {
         },
       ];
 
-      (mockDb.query as ReturnType<typeof mock>)
+      (mockDb.query as ReturnType<typeof vi.fn>)
         .mockImplementationOnce(() => Promise.resolve([[sourceClaim]]))
         .mockImplementationOnce(() => Promise.resolve([[]]))
         .mockImplementationOnce(() => Promise.resolve([samePredicateClaims]))
@@ -610,7 +610,7 @@ describe("RelatedClaimsService", () => {
         extracted_at: new Date(),
       };
 
-      (mockDb.query as ReturnType<typeof mock>)
+      (mockDb.query as ReturnType<typeof vi.fn>)
         .mockImplementationOnce(() => Promise.resolve([[sourceClaim]]))
         .mockImplementationOnce(() => Promise.resolve([[duplicateClaim]]))
         .mockImplementationOnce(() => Promise.resolve([[duplicateClaim]]))

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { parseLLMJson, SummaryResponseSchema, ExtractedClaimsSchema, type ExtractedClaims } from "./parse-llm-json";
 

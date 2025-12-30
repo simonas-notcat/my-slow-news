@@ -37,7 +37,7 @@ services:
       - ./digests:/app/digests
       - ./config.yaml:/app/config.yaml:ro
     command: >
-      sh -c "echo '0 7 * * * cd /app && bun run digest >> /var/log/cron.log 2>&1' | crontab - && crond -f"
+      sh -c "echo '0 7 * * * cd /app && npm run digest >> /var/log/cron.log 2>&1' | crontab - && crond -f"
     restart: unless-stopped
 
 volumes:

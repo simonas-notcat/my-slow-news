@@ -1,12 +1,12 @@
-import { describe, test, expect, mock, beforeEach, afterEach } from "bun:test";
+import { describe, test, expect, vi, beforeEach, afterEach } from "vitest";
 import { OllamaEmbeddingProvider } from "./ollama";
 
 describe("OllamaEmbeddingProvider", () => {
   const originalFetch = globalThis.fetch;
-  let mockFetch: ReturnType<typeof mock>;
+  let mockFetch: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    mockFetch = mock(() =>
+    mockFetch = vi.fn(() =>
       Promise.resolve(
         new Response(
           JSON.stringify({

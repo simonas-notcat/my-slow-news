@@ -5,7 +5,7 @@
  * feature flag behavior, and environment variable validation.
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach } from "vitest";
 
 describe("Semantic Analysis Configuration", () => {
   const originalOpenAIKey = process.env.OPENAI_API_KEY;

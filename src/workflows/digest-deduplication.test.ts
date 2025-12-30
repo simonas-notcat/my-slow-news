@@ -5,13 +5,13 @@
  * environment variable validation in the save-to-database step.
  */
 
-import { describe, test, expect, mock, beforeEach, afterEach } from "bun:test";
+import { describe, test, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Mock modules before importing the code under test
-const mockGetEmbeddingService = mock(() => ({
+const mockGetEmbeddingService = vi.fn(() => ({
   name: "openai",
   dimensions: 1536,
-  embed: mock(() =>
+  embed: vi.fn(() =>
     Promise.resolve({
       text: "test",
       embedding: [0.1, 0.2, 0.3],
@@ -19,11 +19,11 @@ const mockGetEmbeddingService = mock(() => ({
       cached: false,
     })
   ),
-  embedBatch: mock(() => Promise.resolve([])),
+  embedBatch: vi.fn(() => Promise.resolve([])),
 }));
 
-const mockClaimDeduplicationService = mock(() => ({
-  processNewClaim: mock(() =>
+const mockClaimDeduplicationService = vi.fn(() => ({
+  processNewClaim: vi.fn(() =>
     Promise.resolve({
       isNew: true,
       claim: { id: "claim:test", subject: "Test", predicate: "has", object: "value" },
