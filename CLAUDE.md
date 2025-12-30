@@ -124,12 +124,32 @@ npm run dev
 
 ## Environment Variables
 
-Required in `.env`:
-```
+The project uses [dotenv](https://www.npmjs.com/package/dotenv) to automatically load environment variables from a `.env` file.
+
+### Required Variables
+
+```bash
+# Anthropic API key for Claude AI
 ANTHROPIC_API_KEY=sk-ant-...
+
+# SurrealDB connection credentials
+SURREALDB_USERNAME=admin
+SURREALDB_PASSWORD=your-password
 ```
 
-No Reddit API credentials needed - the app uses RSS feeds and web scraping.
+### Optional Variables
+
+```bash
+# Database URL - overrides config.yaml database.url if set
+# Useful for switching between local and cloud SurrealDB instances
+DATABASE_URL=ws://localhost:8000/rpc           # Local
+# DATABASE_URL=wss://your-db.surreal.cloud/rpc  # Cloud
+
+# OpenAI API key (required if using OpenAI embeddings)
+OPENAI_API_KEY=sk-proj-...
+```
+
+**Note**: No Reddit API credentials needed - the app uses RSS feeds and web scraping.
 
 ## Configuration (config.yaml)
 

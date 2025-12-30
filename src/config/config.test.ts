@@ -1,5 +1,6 @@
-import { describe, expect, test, beforeEach, afterEach } from "vitest";
-import { getEnvVar } from "./index";
+import { describe, expect, test, beforeEach, afterEach, vi } from "vitest";
+import { getEnvVar, loadConfig } from "./index";
+import { existsSync, readFileSync } from "fs";
 
 describe("config", () => {
   describe("getEnvVar", () => {
@@ -46,6 +47,49 @@ describe("config", () => {
 
       // Empty string is falsy, so required check fails
       expect(() => getEnvVar("TEST_VAR")).toThrow();
+    });
+  });
+
+  describe("loadConfig with DATABASE_URL override", () => {
+    const originalEnv = { ...process.env };
+
+    beforeEach(() => {
+      // Clear DATABASE_URL
+      delete process.env.DATABASE_URL;
+    });
+
+    afterEach(() => {
+      // Restore original env
+      process.env = { ...originalEnv };
+    });
+
+    test("uses config.yaml database URL when DATABASE_URL not set", () => {
+      const config = loadConfig();
+
+      // Should use the value from config.yaml
+      expect(config.database.url).toBe("ws://localhost:8000/rpc");
+    });
+
+    test("overrides config.yaml with DATABASE_URL environment variable", () => {
+      const customUrl = "wss://custom.surreal.cloud/rpc";
+      process.env.DATABASE_URL = customUrl;
+
+      const config = loadConfig();
+
+      // Should use the environment variable override
+      expect(config.database.url).toBe(customUrl);
+    });
+
+    test("preserves other database config when overriding URL", () => {
+      process.env.DATABASE_URL = "wss://override.surreal.cloud/rpc";
+
+      const config = loadConfig();
+
+      // URL should be overridden
+      expect(config.database.url).toBe("wss://override.surreal.cloud/rpc");
+      // But other fields should remain from config.yaml
+      expect(config.database.namespace).toBe("myslownews");
+      expect(config.database.database).toBe("main");
     });
   });
 });

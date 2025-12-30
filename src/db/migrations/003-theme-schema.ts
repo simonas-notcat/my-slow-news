@@ -80,11 +80,26 @@ async function checkDependencies(db: Surreal): Promise<void> {
       );
     }
   } catch (error) {
-    if (error instanceof Error && error.message.includes("dependency")) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
+    // Re-throw dependency errors
+    if (errorMessage.includes("dependency")) {
       throw error;
     }
-    // Don't fail on dependency check errors - just log a warning
-    console.log("  Warning: Could not verify dependencies, proceeding anyway");
+
+    // Only suppress expected schema-related errors (table/field not found)
+    // Re-throw connection errors, permission errors, etc.
+    if (
+      errorMessage.includes("does not exist") ||
+      errorMessage.includes("not found") ||
+      errorMessage.includes("table info format")
+    ) {
+      console.log("  Warning: Could not verify claim.embedding field, but proceeding");
+      return;
+    }
+
+    // For unexpected errors (connection, permission, etc), re-throw them
+    throw error;
   }
 }
 

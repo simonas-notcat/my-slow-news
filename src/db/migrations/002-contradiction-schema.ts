@@ -14,6 +14,9 @@ DEFINE FIELD contradiction_type ON claim_similarity TYPE option<string>;
 DEFINE FIELD explanation ON claim_similarity TYPE option<string>;
 
 -- Index for finding contradictions by relationship
+-- Note: WHERE clause removed for compatibility with SurrealDB v2 cloud instances
+-- Original syntax: WHERE relationship = 'contradicts'
+-- The WHERE clause is not supported in all SurrealDB versions, particularly cloud deployments
 DEFINE INDEX idx_claim_similarity_contradicts ON claim_similarity FIELDS relationship;
 `;
 
@@ -43,11 +46,27 @@ async function checkDependencies(db: Surreal): Promise<void> {
       );
     }
   } catch (error) {
-    if (error instanceof Error && error.message.includes("dependency")) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
+    // Re-throw dependency errors
+    if (errorMessage.includes("dependency")) {
       throw error;
     }
-    // Don't fail on dependency check errors - just log a warning
-    console.log("  Warning: Could not verify dependencies, proceeding anyway");
+
+    // Only suppress expected schema-related errors (table not found)
+    // Re-throw connection errors, permission errors, etc.
+    if (
+      errorMessage.includes("does not exist") ||
+      errorMessage.includes("not found")
+    ) {
+      throw new Error(
+        `Migration dependency not met: claim_similarity table not found. ` +
+          `Please apply migration 001-vector-schema first.`
+      );
+    }
+
+    // For unexpected errors, re-throw them
+    throw error;
   }
 }
 
