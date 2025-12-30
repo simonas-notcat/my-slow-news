@@ -125,6 +125,26 @@ export const ConfigSchema = z.object({
       // Use LLM for generating theme labels
       use_llm_labels: z.boolean().default(true),
     }).optional().default({}),
+    // Contradiction detection configuration
+    contradictions: z.object({
+      // Enable contradiction detection in digest
+      enabled: z.boolean().default(false),
+      // Minimum similarity to consider for contradiction check
+      min_similarity: z.number().default(0.7),
+      // Use LLM for semantic contradiction verification
+      use_llm_verification: z.boolean().default(true),
+      // Maximum contradictions to show in digest
+      max_in_digest: z.number().default(5),
+    }).optional().default({}),
+    // Related claims in digest configuration
+    related_in_digest: z.object({
+      // Enable related claims in digest output
+      enabled: z.boolean().default(false),
+      // Max related claims per new claim
+      per_claim_limit: z.number().default(2),
+      // Minimum similarity threshold
+      min_similarity: z.number().default(0.65),
+    }).optional().default({}),
   }).optional().default({}),
 });
 

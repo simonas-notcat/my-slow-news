@@ -83,3 +83,16 @@ semantic:
     enabled: true
     similarity_threshold: 0.92  # Claims above this are duplicates
     related_threshold: 0.75     # Claims above this are related
+
+  # Related claims shown in digest output
+  related_in_digest:
+    enabled: true              # Enable related claims in digest
+    per_claim_limit: 2          # Max related claims per new claim
+    min_similarity: 0.65        # Minimum similarity threshold
+
+  # Contradiction detection in digest output
+  contradictions:
+    enabled: true              # Enable contradiction detection
+    min_similarity: 0.7         # Min similarity to consider for contradiction
+    use_llm_verification: true  # Use LLM to verify semantic contradictions
+    max_in_digest: 5            # Max contradictions to show in digest
