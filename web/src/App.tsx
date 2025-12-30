@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo } from "react";
 import { AppProvider, useAppContext } from "./context/AppContext";
 import { DatabaseProvider, useDatabase } from "./context/DatabaseContext";
 import { useClaims } from "./hooks/useClaims";
@@ -10,15 +10,16 @@ import { Pagination } from "./components/Pagination";
 import { LoadingSpinner } from "./components/LoadingSpinner";
 import { EmptyState } from "./components/EmptyState";
 import { ConnectionDialog } from "./components/ConnectionDialog";
-import { QuickStanceModal } from "./components/QuickStanceModal";
 import { Toast } from "./components/Toast";
 
 function ClaimsListScreen() {
   const { state, dispatch } = useAppContext();
   const { refetch } = useClaims();
-  const [selectedClaimForStance, setSelectedClaimForStance] = useState<typeof state.claims[0] | null>(null);
 
-  const totalPages = Math.ceil(state.totalClaims / state.pageSize);
+  const totalPages = useMemo(
+    () => Math.ceil(state.totalClaims / state.pageSize),
+    [state.totalClaims, state.pageSize]
+  );
 
   // Loading state
   if (state.isLoading && state.claims.length === 0) {
@@ -72,13 +73,6 @@ function ClaimsListScreen() {
         totalPages={totalPages}
         totalItems={state.totalClaims}
       />
-
-      {selectedClaimForStance && (
-        <QuickStanceModal
-          claim={selectedClaimForStance}
-          onClose={() => setSelectedClaimForStance(null)}
-        />
-      )}
     </>
   );
 }

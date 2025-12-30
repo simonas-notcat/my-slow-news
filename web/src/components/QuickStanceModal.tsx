@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useAppContext } from "../context/AppContext";
 import { useDatabase } from "../context/DatabaseContext";
 import { saveStance, removeStance } from "../utils/stanceOperations";
@@ -16,11 +16,42 @@ const STANCE_OPTIONS: { value: UserStance; label: string; color: string }[] = [
   { value: "uncertain", label: "Uncertain", color: "bg-blue-500 hover:bg-blue-600" },
 ];
 
+const TOAST_DURATION = 3000;
+
 export function QuickStanceModal({ claim, onClose }: QuickStanceModalProps) {
   const { dispatch } = useAppContext();
   const { db } = useDatabase();
   const [note, setNote] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+
+  // Track timeout for cleanup
+  const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const showToastWithAutoHide = useCallback(
+    (message: string) => {
+      // Clear any existing timeout
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
+      }
+
+      dispatch({ type: "SET_TOAST", message });
+
+      toastTimeoutRef.current = setTimeout(() => {
+        dispatch({ type: "SET_TOAST", message: null });
+        toastTimeoutRef.current = null;
+      }, TOAST_DURATION);
+    },
+    [dispatch]
+  );
 
   const handleSelectStance = async (stance: UserStance) => {
     if (!db) return;
@@ -29,14 +60,10 @@ export function QuickStanceModal({ claim, onClose }: QuickStanceModalProps) {
     try {
       await saveStance(db, claim.id, stance, note || undefined);
       dispatch({ type: "UPDATE_STANCE", claimId: claim.id, stance, note: note || undefined });
-      dispatch({ type: "SET_TOAST", message: `Marked as "${stance}"` });
+      showToastWithAutoHide(`Marked as "${stance}"`);
       onClose();
-
-      // Clear toast after 3 seconds
-      setTimeout(() => {
-        dispatch({ type: "SET_TOAST", message: null });
-      }, 3000);
     } catch (err) {
+      dispatch({ type: "SET_ERROR", error: "Failed to save stance" });
       console.error("Failed to save stance:", err);
     } finally {
       setIsSaving(false);
@@ -49,14 +76,11 @@ export function QuickStanceModal({ claim, onClose }: QuickStanceModalProps) {
     setIsSaving(true);
     try {
       await removeStance(db, claim.id);
-      dispatch({ type: "UPDATE_STANCE", claimId: claim.id, stance: undefined as unknown as UserStance });
-      dispatch({ type: "SET_TOAST", message: "Stance removed" });
+      dispatch({ type: "REMOVE_STANCE", claimId: claim.id });
+      showToastWithAutoHide("Stance removed");
       onClose();
-
-      setTimeout(() => {
-        dispatch({ type: "SET_TOAST", message: null });
-      }, 3000);
     } catch (err) {
+      dispatch({ type: "SET_ERROR", error: "Failed to remove stance" });
       console.error("Failed to remove stance:", err);
     } finally {
       setIsSaving(false);
@@ -64,13 +88,21 @@ export function QuickStanceModal({ claim, onClose }: QuickStanceModalProps) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="stance-modal-title"
+    >
       <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900">Record Your Stance</h3>
+          <h3 id="stance-modal-title" className="text-lg font-semibold text-gray-900">
+            Record Your Stance
+          </h3>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 text-xl"
+            aria-label="Close modal"
+            className="text-gray-400 hover:text-gray-600 text-xl focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
           >
             ×
           </button>
@@ -88,13 +120,14 @@ export function QuickStanceModal({ claim, onClose }: QuickStanceModalProps) {
         </div>
 
         {/* Stance buttons */}
-        <div className="grid grid-cols-2 gap-2 mb-4">
+        <div className="grid grid-cols-2 gap-2 mb-4" role="group" aria-label="Stance options">
           {STANCE_OPTIONS.map((option) => (
             <button
               key={option.value}
               onClick={() => handleSelectStance(option.value)}
               disabled={isSaving}
-              className={`py-2.5 px-4 text-white rounded-md font-medium transition-colors disabled:opacity-50 ${option.color}`}
+              aria-pressed={claim.user_stance === option.value}
+              className={`py-2.5 px-4 text-white rounded-md font-medium transition-colors disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${option.color}`}
             >
               {option.label}
             </button>
@@ -103,10 +136,11 @@ export function QuickStanceModal({ claim, onClose }: QuickStanceModalProps) {
 
         {/* Note input */}
         <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="stance-note" className="block text-sm font-medium text-gray-700 mb-1">
             Note (optional)
           </label>
           <textarea
+            id="stance-note"
             value={note}
             onChange={(e) => setNote(e.target.value)}
             placeholder="Add a note about your stance..."
@@ -121,14 +155,14 @@ export function QuickStanceModal({ claim, onClose }: QuickStanceModalProps) {
             <button
               onClick={handleRemoveStance}
               disabled={isSaving}
-              className="text-sm text-red-600 hover:text-red-700 disabled:opacity-50"
+              className="text-sm text-red-600 hover:text-red-700 disabled:opacity-50 focus:outline-none focus:underline"
             >
               Remove stance
             </button>
           )}
           <button
             onClick={onClose}
-            className="text-sm text-gray-500 hover:text-gray-700 ml-auto"
+            className="text-sm text-gray-500 hover:text-gray-700 ml-auto focus:outline-none focus:underline"
           >
             Cancel
           </button>

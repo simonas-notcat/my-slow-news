@@ -58,7 +58,8 @@ export type AppAction =
       claimId: string;
       stance: UserStance;
       note?: string;
-    };
+    }
+  | { type: "REMOVE_STANCE"; claimId: string };
 
 export const initialState: AppState = {
   currentScreen: "list",
@@ -185,6 +186,23 @@ export function appReducer(state: AppState, action: AppAction): AppState {
                 ...state.claimDetail,
                 user_stance: action.stance,
                 user_note: action.note,
+              }
+            : state.claimDetail,
+        showQuickStance: false,
+      };
+
+    case "REMOVE_STANCE":
+      return {
+        ...state,
+        claims: state.claims.map((c) =>
+          c.id === action.claimId ? { ...c, user_stance: undefined } : c
+        ),
+        claimDetail:
+          state.claimDetail?.id === action.claimId
+            ? {
+                ...state.claimDetail,
+                user_stance: undefined,
+                user_note: undefined,
               }
             : state.claimDetail,
         showQuickStance: false,
