@@ -183,6 +183,22 @@ link_fetching:
   max_content_length: 5000
   allowed_domains: []
   blocked_domains: [twitter.com, x.com, facebook.com, instagram.com, tiktok.com]
+
+# Semantic features configuration
+semantic:
+  deduplication:
+    enabled: true
+    similarity_threshold: 0.92
+    related_threshold: 0.75
+  related_in_digest:
+    enabled: true              # Show related historical claims in digest
+    per_claim_limit: 2          # Max related claims per new claim
+    min_similarity: 0.65        # Minimum similarity threshold
+  contradictions:
+    enabled: true              # Detect contradicting claims
+    min_similarity: 0.7         # Min similarity for contradiction check
+    use_llm_verification: true  # Use LLM to verify semantic contradictions
+    max_in_digest: 5            # Max contradictions to show in digest
 ```
 
 ## Database Schema

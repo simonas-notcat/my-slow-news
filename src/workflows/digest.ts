@@ -46,6 +46,10 @@ import {
 } from "../utils/digest-format";
 import { getEmbeddingService, type EmbeddingConfig } from "../embeddings";
 import { ClaimDeduplicationService } from "../embeddings/deduplication";
+import { RelatedClaimsService, type RelatedClaim } from "../embeddings/related";
+import { ContradictionDetectionService } from "../embeddings/contradictions/service";
+import { createContradictionVerifier } from "../embeddings/contradictions/llm-verifier";
+import type { ContradictionPair } from "../embeddings/contradictions/types";
 
 // ============================================================================
 // Workflow Schemas - Proper type definitions for step inputs/outputs
@@ -173,18 +177,60 @@ type ExtractClaimsContext = {
   date?: string;
 };
 
+// Type for semantic analysis
+type SemanticAnalysis = z.infer<typeof SemanticAnalysisSchema>;
+
 /** Context for generate-digest step */
 type GenerateDigestContext = {
-  inputData?: { summaries_with_claims: PostWithClaims[]; all_claims: WorkflowClaim[]; date: string };
+  inputData?: {
+    summaries_with_claims: PostWithClaims[];
+    all_claims: WorkflowClaim[];
+    date: string;
+    semantic_analysis?: SemanticAnalysis;
+  };
   summaries_with_claims?: PostWithClaims[];
   all_claims?: WorkflowClaim[];
   date?: string;
+  semantic_analysis?: SemanticAnalysis;
 };
 
 /** Context for save-to-database step */
 type SaveToDatabaseContext = {
   inputData?: DigestWithData;
 } & Partial<DigestWithData>;
+
+// Schema for related claim in digest
+const RelatedClaimSchema = z.object({
+  subject: z.string(),
+  predicate: z.string(),
+  object: z.string(),
+  similarity: z.number(),
+  date: z.string().optional(),
+});
+
+// Schema for contradiction pair in digest
+const ContradictionSchema = z.object({
+  newClaim: z.object({
+    subject: z.string(),
+    predicate: z.string(),
+    object: z.string(),
+  }),
+  existingClaim: z.object({
+    id: z.string(),
+    subject: z.string(),
+    predicate: z.string(),
+    object: z.string(),
+  }),
+  contradictionType: z.string(),
+  confidence: z.number(),
+  explanation: z.string().optional(),
+});
+
+// Schema for semantic analysis results
+const SemanticAnalysisSchema = z.object({
+  relatedClaimsMap: z.record(z.string(), z.array(RelatedClaimSchema)),
+  contradictions: z.array(ContradictionSchema),
+});
 
 // Extended schema for passing data through to database step
 const DigestWithDataSchema = z.object({
@@ -194,6 +240,7 @@ const DigestWithDataSchema = z.object({
   date: z.string(),
   summaries_with_claims: z.array(PostWithClaimsSchema),
   all_claims: z.array(WorkflowClaimSchema),
+  semantic_analysis: SemanticAnalysisSchema.optional(),
 });
 
 // Step 1: Fetch Reddit content
@@ -635,6 +682,256 @@ Extract claims as RDF triples and analyze commenter stances. Return JSON.`;
   },
 });
 
+// Step 3.5: Semantic Analysis - Find related claims and detect contradictions
+const semanticAnalysisStep = createStep({
+  id: "semantic-analysis",
+  inputSchema: z.object({
+    summaries_with_claims: z.array(PostWithClaimsSchema),
+    all_claims: z.array(WorkflowClaimSchema),
+    date: z.string(),
+  }),
+  outputSchema: z.object({
+    summaries_with_claims: z.array(PostWithClaimsSchema),
+    all_claims: z.array(WorkflowClaimSchema),
+    date: z.string(),
+    semantic_analysis: SemanticAnalysisSchema.optional(),
+  }),
+  execute: async (context: {
+    inputData?: { summaries_with_claims: PostWithClaims[]; all_claims: WorkflowClaim[]; date: string };
+    summaries_with_claims?: PostWithClaims[];
+    all_claims?: WorkflowClaim[];
+    date?: string;
+  }) => {
+    const input = context.inputData ?? context;
+    const summaries_with_claims = input.summaries_with_claims ?? [];
+    const all_claims = input.all_claims ?? [];
+    const date = input.date ?? new Date().toISOString().split("T")[0];
+    const config = loadConfig();
+
+    // Check if semantic features are enabled
+    const semanticConfig = config.semantic ?? {};
+    const relatedConfig = semanticConfig.related_in_digest ?? {};
+    const contradictionsConfig = semanticConfig.contradictions ?? {};
+    const relatedEnabled = relatedConfig.enabled ?? false;
+    const contradictionsEnabled = contradictionsConfig.enabled ?? false;
+
+    // If neither feature is enabled, skip
+    if (!relatedEnabled && !contradictionsEnabled) {
+      console.log("\nSemantic analysis: disabled (enable in config.semantic)");
+      return { summaries_with_claims, all_claims, date };
+    }
+
+    console.log("\nRunning semantic analysis...");
+
+    // Check for required environment variables
+    const provider = config.embeddings?.provider ?? "openai";
+    if (provider === "openai" && !process.env.OPENAI_API_KEY) {
+      console.warn("  OPENAI_API_KEY not set, skipping semantic analysis");
+      return { summaries_with_claims, all_claims, date };
+    }
+
+    let db;
+    try {
+      db = await getDb(config);
+    } catch (error) {
+      console.error("  Failed to connect to database:", error);
+      return { summaries_with_claims, all_claims, date };
+    }
+
+    const semanticAnalysis: SemanticAnalysis = {
+      relatedClaimsMap: {},
+      contradictions: [],
+    };
+
+    try {
+      // Initialize embedding service
+      const embeddingConfig: EmbeddingConfig = {
+        provider,
+        model: config.embeddings?.model ?? "text-embedding-3-small",
+        dimensions: config.embeddings?.dimensions ?? 1536,
+        cacheEnabled: config.embeddings?.cache_enabled ?? true,
+        cacheSize: config.embeddings?.cache_size ?? 10000,
+        batchSize: config.embeddings?.batch_size ?? 100,
+      };
+      const embeddingService = getEmbeddingService(embeddingConfig);
+
+      // Generate embeddings for new claims
+      const validClaims = all_claims.filter(c =>
+        c.subject && c.predicate && c.object && (c.confidence ?? 0) >= 0.5
+      );
+
+      if (validClaims.length === 0) {
+        console.log("  No valid claims to analyze");
+        return { summaries_with_claims, all_claims, date };
+      }
+
+      console.log(`  Generating embeddings for ${validClaims.length} claims...`);
+      const claimTexts = validClaims.map(c =>
+        `${c.subject} ${c.predicate.replace(/-/g, " ")} ${c.object}`
+      );
+      const embeddings = await embeddingService.embedBatch(claimTexts);
+
+      // Find related claims for each new claim (if enabled)
+      if (relatedEnabled) {
+        console.log("  Finding related claims...");
+        const perClaimLimit = relatedConfig.per_claim_limit ?? 2;
+        const minSimilarity = relatedConfig.min_similarity ?? 0.65;
+
+        for (let i = 0; i < validClaims.length; i++) {
+          const claim = validClaims[i];
+          const embedding = embeddings[i];
+          const claimKey = `${claim.subject}|${claim.predicate}|${claim.object}`;
+
+          // Query for similar existing claims
+          const [existingClaims] = await db.query<[Array<{
+            subject: string;
+            predicate: string;
+            object: string;
+            extracted_at: string;
+            similarity: number;
+          }>]>(`
+            SELECT
+              subject,
+              predicate,
+              object,
+              extracted_at,
+              vector::similarity::cosine(embedding, $embedding) AS similarity
+            FROM claim
+            WHERE
+              embedding IS NOT NONE
+              AND is_canonical = true
+              AND vector::similarity::cosine(embedding, $embedding) >= $minSimilarity
+              AND NOT (subject = $subject AND predicate = $predicate AND object = $object)
+            ORDER BY similarity DESC
+            LIMIT $limit
+          `, {
+            embedding,
+            minSimilarity,
+            limit: perClaimLimit,
+            subject: claim.subject,
+            predicate: claim.predicate,
+            object: claim.object,
+          });
+
+          if (existingClaims && existingClaims.length > 0) {
+            semanticAnalysis.relatedClaimsMap[claimKey] = existingClaims.map((ec: {
+              subject: string;
+              predicate: string;
+              object: string;
+              extracted_at: string;
+              similarity: number;
+            }) => ({
+              subject: ec.subject,
+              predicate: ec.predicate,
+              object: ec.object,
+              similarity: ec.similarity,
+              date: ec.extracted_at ? new Date(ec.extracted_at).toISOString().split("T")[0] : undefined,
+            }));
+          }
+        }
+
+        const totalRelated = Object.values(semanticAnalysis.relatedClaimsMap)
+          .reduce((sum: number, arr: Array<{ subject: string; predicate: string; object: string; similarity: number; date?: string }>) => sum + arr.length, 0);
+        console.log(`  Found ${totalRelated} related claims for ${Object.keys(semanticAnalysis.relatedClaimsMap).length} new claims`);
+      }
+
+      // Detect contradictions (if enabled)
+      if (contradictionsEnabled) {
+        console.log("  Detecting contradictions...");
+        const minSimilarity = contradictionsConfig.min_similarity ?? 0.7;
+        const useLlmVerification = contradictionsConfig.use_llm_verification ?? true;
+        const maxContradictions = contradictionsConfig.max_in_digest ?? 5;
+
+        // Create verifier if LLM verification is enabled
+        const llmVerifier = useLlmVerification ? createContradictionVerifier() : undefined;
+        const contradictionService = new ContradictionDetectionService(db, llmVerifier);
+
+        // For each new claim, check for contradictions with existing claims
+        for (let i = 0; i < validClaims.length && semanticAnalysis.contradictions.length < maxContradictions; i++) {
+          const claim = validClaims[i];
+          const embedding = embeddings[i];
+
+          // Find similar existing claims that might contradict
+          const [candidates] = await db.query<[Array<{
+            id: string;
+            subject: string;
+            predicate: string;
+            object: string;
+            embedding: number[];
+            similarity: number;
+          }>]>(`
+            SELECT
+              id,
+              subject,
+              predicate,
+              object,
+              embedding,
+              vector::similarity::cosine(embedding, $embedding) AS similarity
+            FROM claim
+            WHERE
+              embedding IS NOT NONE
+              AND is_canonical = true
+              AND vector::similarity::cosine(embedding, $embedding) >= $minSimilarity
+              AND NOT (subject = $subject AND predicate = $predicate AND object = $object)
+            ORDER BY similarity DESC
+            LIMIT 10
+          `, {
+            embedding,
+            minSimilarity,
+            subject: claim.subject,
+            predicate: claim.predicate,
+            object: claim.object,
+          });
+
+          if (!candidates || candidates.length === 0) continue;
+
+          // Check each candidate for contradiction
+          for (const candidate of candidates) {
+            if (semanticAnalysis.contradictions.length >= maxContradictions) break;
+
+            // Format claims for verification
+            const newClaimText = `${claim.subject} ${claim.predicate.replace(/-/g, " ")} ${claim.object}`;
+            const existingClaimText = `${candidate.subject} ${candidate.predicate.replace(/-/g, " ")} ${candidate.object}`;
+
+            // Use LLM to verify contradiction
+            if (llmVerifier) {
+              try {
+                const result = await llmVerifier(newClaimText, existingClaimText);
+                if (result.isContradiction && result.confidence >= 0.7) {
+                  semanticAnalysis.contradictions.push({
+                    newClaim: {
+                      subject: claim.subject,
+                      predicate: claim.predicate,
+                      object: claim.object,
+                    },
+                    existingClaim: {
+                      id: candidate.id,
+                      subject: candidate.subject,
+                      predicate: candidate.predicate,
+                      object: candidate.object,
+                    },
+                    contradictionType: "semantic",
+                    confidence: result.confidence,
+                    explanation: result.explanation,
+                  });
+                }
+              } catch (error) {
+                console.warn(`  Contradiction check failed for claim: ${newClaimText}`);
+              }
+            }
+          }
+        }
+
+        console.log(`  Detected ${semanticAnalysis.contradictions.length} contradictions`);
+      }
+    } catch (error) {
+      console.error("  Semantic analysis failed:", error);
+    }
+
+    return { summaries_with_claims, all_claims, date, semantic_analysis: semanticAnalysis };
+  },
+});
+
 // Step 4: Generate markdown and save
 const generateDigestStep = createStep({
   id: "generate-digest",
@@ -642,6 +939,7 @@ const generateDigestStep = createStep({
     summaries_with_claims: z.array(PostWithClaimsSchema),
     all_claims: z.array(WorkflowClaimSchema),
     date: z.string(),
+    semantic_analysis: SemanticAnalysisSchema.optional(),
   }),
   outputSchema: DigestWithDataSchema,
   execute: async (context: GenerateDigestContext) => {
@@ -649,6 +947,7 @@ const generateDigestStep = createStep({
     const summaries_with_claims = input.summaries_with_claims ?? [];
     const all_claims = input.all_claims ?? [];
     const date = input.date ?? new Date().toISOString().split("T")[0];
+    const semantic_analysis = input.semantic_analysis;
     const config = loadConfig();
 
     console.log(`\nGenerating digest for ${date}...`);
@@ -723,6 +1022,27 @@ const generateDigestStep = createStep({
       }
     }
 
+    // Add Contradictions Detected section if any exist
+    if (semantic_analysis?.contradictions && semantic_analysis.contradictions.length > 0) {
+      markdown += `## Contradictions Detected\n\n`;
+      markdown += `*New claims that contradict previously extracted knowledge:*\n\n`;
+
+      for (const contradiction of semantic_analysis.contradictions) {
+        const newClaimText = `${contradiction.newClaim.subject} ${contradiction.newClaim.predicate.replace(/-/g, " ")} ${contradiction.newClaim.object}`;
+        const existingClaimText = `${contradiction.existingClaim.subject} ${contradiction.existingClaim.predicate.replace(/-/g, " ")} ${contradiction.existingClaim.object}`;
+        const confidencePct = Math.round(contradiction.confidence * 100);
+
+        markdown += `> ⚠️ **New:** "${sanitizeMarkdown(newClaimText)}"\n`;
+        markdown += `> **Contradicts:** "${sanitizeMarkdown(existingClaimText)}"\n`;
+        if (contradiction.explanation) {
+          markdown += `> *${sanitizeMarkdown(contradiction.explanation)}* (${confidencePct}% confidence)\n`;
+        }
+        markdown += `\n`;
+      }
+
+      markdown += `---\n\n`;
+    }
+
     markdown += `---\n\n`;
 
     for (const [subreddit, items] of bySubreddit) {
@@ -757,11 +1077,25 @@ const generateDigestStep = createStep({
           markdown += `**Topics:** ${summary.key_topics.map(t => `\`${sanitizeMarkdown(t)}\``).join(" ")}\n\n`;
         }
 
-        // Claims in natural language format
+        // Claims in natural language format with related claims
         if (claims?.length > 0) {
           markdown += `**Key Claims:**\n`;
           for (const claim of claims.slice(0, 5)) { // Limit to top 5 claims
             markdown += `- ${claimToNaturalLanguage(claim)}\n`;
+
+            // Show related claims if available
+            if (semantic_analysis?.relatedClaimsMap) {
+              const claimKey = `${claim.subject}|${claim.predicate}|${claim.object}`;
+              const related = semantic_analysis.relatedClaimsMap[claimKey];
+              if (related && related.length > 0) {
+                for (const r of related) {
+                  const relatedText = `${r.subject} ${r.predicate.replace(/-/g, " ")} ${r.object}`;
+                  const dateStr = r.date ? ` (${r.date})` : "";
+                  const simPct = Math.round(r.similarity * 100);
+                  markdown += `  - *Related:* "${sanitizeMarkdown(relatedText)}"${dateStr} [${simPct}%]\n`;
+                }
+              }
+            }
           }
           if (claims.length > 5) {
             markdown += `- *...and ${claims.length - 5} more claims*\n`;
@@ -787,6 +1121,7 @@ const generateDigestStep = createStep({
       date,
       summaries_with_claims,
       all_claims,
+      semantic_analysis,
     };
   },
 });
@@ -1036,6 +1371,7 @@ export const digestWorkflow = createWorkflow({
   .then(fetchContentStep)
   .then(summarizeStep)
   .then(extractClaimsStep)
+  .then(semanticAnalysisStep)
   .then(generateDigestStep)
   .then(saveToDatabaseStep)
   .commit();
