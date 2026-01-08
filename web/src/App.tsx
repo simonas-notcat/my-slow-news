@@ -1,25 +1,34 @@
 import { useMemo } from "react";
+import { BrowserRouter, Routes, Route, Navigate, useSearchParams } from "react-router-dom";
 import { AppProvider, useAppContext } from "./context/AppContext";
 import { DatabaseProvider, useDatabase } from "./context/DatabaseContext";
 import { useClaims } from "./hooks/useClaims";
 import { Header } from "./components/Header";
 import { FilterBar } from "./components/FilterBar";
 import { ClaimsList } from "./components/ClaimsList";
-import { ClaimDetail } from "./components/ClaimDetail";
 import { Pagination } from "./components/Pagination";
 import { LoadingSpinner } from "./components/LoadingSpinner";
 import { EmptyState } from "./components/EmptyState";
 import { ConnectionDialog } from "./components/ConnectionDialog";
 import { Toast } from "./components/Toast";
+import { NotFound } from "./components/NotFound";
+import { ClaimDetailScreen } from "./screens/ClaimDetailScreen";
 
 function ClaimsListScreen() {
-  const { state, dispatch } = useAppContext();
+  const { state } = useAppContext();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { refetch } = useClaims();
 
+  const currentPage = Number(searchParams.get("page") || "1");
+  const pageSize = 10;
   const totalPages = useMemo(
-    () => Math.ceil(state.totalClaims / state.pageSize),
-    [state.totalClaims, state.pageSize]
+    () => Math.ceil(state.totalClaims / pageSize),
+    [state.totalClaims]
   );
+
+  const handleResetFilters = () => {
+    setSearchParams({});
+  };
 
   // Loading state
   if (state.isLoading && state.claims.length === 0) {
@@ -52,7 +61,7 @@ function ClaimsListScreen() {
         action={
           state.totalClaims === 0
             ? undefined
-            : { label: "Reset filters", onClick: () => dispatch({ type: "RESET_FILTERS" }) }
+            : { label: "Reset filters", onClick: handleResetFilters }
         }
       />
     );
@@ -69,7 +78,7 @@ function ClaimsListScreen() {
       </div>
 
       <Pagination
-        currentPage={state.currentPage}
+        currentPage={currentPage}
         totalPages={totalPages}
         totalItems={state.totalClaims}
       />
@@ -79,7 +88,6 @@ function ClaimsListScreen() {
 
 function MainApp() {
   const { isConnected } = useDatabase();
-  const { state } = useAppContext();
 
   if (!isConnected) {
     return <ConnectionDialog />;
@@ -91,8 +99,12 @@ function MainApp() {
       <FilterBar />
 
       <main className="flex-1 max-w-4xl mx-auto w-full py-4">
-        {state.currentScreen === "list" && <ClaimsListScreen />}
-        {state.currentScreen === "detail" && <ClaimDetail />}
+        <Routes>
+          <Route path="/" element={<Navigate to="/claims" replace />} />
+          <Route path="/claims" element={<ClaimsListScreen />} />
+          <Route path="/claims/:id" element={<ClaimDetailScreen />} />
+          <Route path="*" element={<NotFound />} />
+        </Routes>
       </main>
 
       <Toast />
@@ -103,9 +115,11 @@ function MainApp() {
 export function App() {
   return (
     <DatabaseProvider>
-      <AppProvider>
-        <MainApp />
-      </AppProvider>
+      <BrowserRouter>
+        <AppProvider>
+          <MainApp />
+        </AppProvider>
+      </BrowserRouter>
     </DatabaseProvider>
   );
 }

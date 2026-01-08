@@ -1,5 +1,5 @@
 import { useMemo, useCallback } from "react";
-import { useAppContext } from "../context/AppContext";
+import { useSearchParams } from "react-router-dom";
 
 interface PaginationProps {
   currentPage: number;
@@ -8,15 +8,17 @@ interface PaginationProps {
 }
 
 export function Pagination({ currentPage, totalPages, totalItems }: PaginationProps) {
-  const { dispatch } = useAppContext();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const goToPage = useCallback(
     (page: number) => {
       if (page >= 1 && page <= totalPages) {
-        dispatch({ type: "SET_PAGE", page });
+        const params = new URLSearchParams(searchParams);
+        params.set("page", page.toString());
+        setSearchParams(params);
       }
     },
-    [dispatch, totalPages]
+    [searchParams, setSearchParams, totalPages]
   );
 
   // Memoize page numbers calculation

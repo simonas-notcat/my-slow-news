@@ -40,6 +40,17 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({
       setError(null);
       const surreal = new Surreal();
       await surreal.connect(config.database.url);
+
+      // Sign in if credentials are provided
+      const username = process.env.SURREALDB_USERNAME;
+      const password = process.env.SURREALDB_PASSWORD;
+      if (username && password) {
+        await surreal.signin({
+          username,
+          password,
+        });
+      }
+
       await surreal.use({
         namespace: config.database.namespace,
         database: config.database.database,

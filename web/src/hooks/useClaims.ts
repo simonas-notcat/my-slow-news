@@ -1,12 +1,26 @@
-import { useEffect, useCallback, useRef } from "react";
+import { useEffect, useCallback, useRef, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useAppContext } from "../context/AppContext";
 import { useDatabase } from "../context/DatabaseContext";
 import { buildClaimsQuery, buildCountQuery } from "../utils/queries";
 import { ClaimListItemSchema, CountResultSchema } from "../types/schemas";
+import type { FilterState } from "../types";
 
 export function useClaims() {
-  const { state, dispatch } = useAppContext();
+  const { dispatch } = useAppContext();
   const { db, isConnected } = useDatabase();
+  const [searchParams] = useSearchParams();
+
+  // Parse filters from URL - memoized to prevent infinite re-renders
+  const filters: FilterState = useMemo(() => ({
+    predicate: searchParams.get("predicate") || null,
+    subject: searchParams.get("subject") || null,
+    days: searchParams.get("days") ? Number(searchParams.get("days")) : 30,
+    stanceFilter: (searchParams.get("stance") || "all") as FilterState["stanceFilter"],
+  }), [searchParams]);
+
+  const currentPage = Number(searchParams.get("page") || "1");
+  const pageSize = 10;
 
   // Track request ID to handle race conditions
   const requestIdRef = useRef(0);
@@ -20,9 +34,9 @@ export function useClaims() {
     dispatch({ type: "SET_LOADING", loading: true });
 
     try {
-      const offset = (state.currentPage - 1) * state.pageSize;
-      const claimsQuery = buildClaimsQuery(state.filters, state.pageSize, offset);
-      const countQuery = buildCountQuery(state.filters);
+      const offset = (currentPage - 1) * pageSize;
+      const claimsQuery = buildClaimsQuery(filters, pageSize, offset);
+      const countQuery = buildCountQuery(filters);
 
       const [claimsResult, countResult] = await Promise.all([
         db.query<unknown[][]>(claimsQuery.sql, claimsQuery.params),
@@ -52,14 +66,14 @@ export function useClaims() {
         err instanceof Error ? err.message : "Failed to fetch claims";
       dispatch({ type: "SET_ERROR", error: message });
     }
-  }, [db, isConnected, state.currentPage, state.pageSize, state.filters, dispatch]);
+  }, [db, isConnected, currentPage, pageSize, filters, dispatch]);
 
-  // Fetch claims when filters or page changes
+  // Fetch claims when URL parameters or connection changes
   useEffect(() => {
     if (isConnected) {
       fetchClaims();
     }
-  }, [isConnected, fetchClaims]);
+  }, [isConnected, searchParams, fetchClaims]);
 
   return { refetch: fetchClaims };
 }

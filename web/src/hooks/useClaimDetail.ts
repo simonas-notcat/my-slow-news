@@ -1,18 +1,20 @@
 import { useEffect, useCallback, useRef } from "react";
+import { useParams } from "react-router-dom";
 import { useAppContext } from "../context/AppContext";
 import { useDatabase } from "../context/DatabaseContext";
 import { buildClaimDetailQuery } from "../utils/queries";
 import { ClaimDetailSchema } from "../types/schemas";
 
 export function useClaimDetail() {
-  const { state, dispatch } = useAppContext();
+  const { dispatch } = useAppContext();
   const { db, isConnected } = useDatabase();
+  const { id } = useParams<{ id: string }>();
 
   // Track request ID to handle race conditions
   const requestIdRef = useRef(0);
 
   const fetchDetail = useCallback(async () => {
-    if (!db || !isConnected || !state.selectedClaimId) return;
+    if (!db || !isConnected || !id) return;
 
     // Increment request ID and capture current value
     const currentRequestId = ++requestIdRef.current;
@@ -20,7 +22,7 @@ export function useClaimDetail() {
     dispatch({ type: "SET_LOADING", loading: true });
 
     try {
-      const query = buildClaimDetailQuery(state.selectedClaimId);
+      const query = buildClaimDetailQuery(id);
       const result = await db.query<unknown[]>(query.sql, query.params);
 
       // Check if this is still the latest request
@@ -48,13 +50,13 @@ export function useClaimDetail() {
         err instanceof Error ? err.message : "Failed to fetch claim details";
       dispatch({ type: "SET_ERROR", error: message });
     }
-  }, [db, isConnected, state.selectedClaimId, dispatch]);
+  }, [db, isConnected, id, dispatch]);
 
   useEffect(() => {
-    if (state.currentScreen === "detail" && state.selectedClaimId) {
+    if (id && isConnected) {
       fetchDetail();
     }
-  }, [state.currentScreen, state.selectedClaimId, fetchDetail]);
+  }, [id, isConnected, fetchDetail]);
 
   return { refetch: fetchDetail };
 }

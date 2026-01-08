@@ -50,7 +50,7 @@ export function buildClaimsQuery(
 
   const sql = `
     SELECT
-      id,
+      <string>id AS id,
       subject,
       predicate,
       object,
@@ -132,24 +132,22 @@ function buildStanceCondition(
 export function buildClaimDetailQuery(claimId: string): QueryResult {
   const sql = `
     LET $claim = (SELECT * FROM claim WHERE id = $claimId)[0];
-    LET $pred = (SELECT description, is_builtin FROM predicate WHERE name = $claim.predicate LIMIT 1)[0];
-    LET $stances = (SELECT * FROM claim_stances WHERE claim = $claimId LIMIT 1)[0];
 
-    RETURN {
-      id: $claim.id,
+    RETURN IF $claim THEN {
+      id: <string>$claim.id,
       subject: $claim.subject,
       predicate: $claim.predicate,
       object: $claim.object,
       confidence: $claim.confidence,
       extracted_at: $claim.extracted_at,
-      predicate_description: $pred.description,
-      predicate_is_builtin: $pred.is_builtin ?? false,
-      content_author_stance: $stances.content_author_stance ?? 'not-stated',
-      commenter_agree_pct: $stances.commenter_agree_pct ?? 0,
-      commenter_disagree_pct: $stances.commenter_disagree_pct ?? 0,
-      user_stance: $stances.user_stance,
-      user_note: $stances.user_note
-    };
+      predicate_description: (SELECT description FROM predicate WHERE name = $claim.predicate LIMIT 1)[0].description,
+      predicate_is_builtin: (SELECT is_builtin FROM predicate WHERE name = $claim.predicate LIMIT 1)[0].is_builtin ?? false,
+      content_author_stance: (SELECT content_author_stance FROM claim_stances WHERE claim = $claim.id LIMIT 1)[0].content_author_stance ?? 'not-stated',
+      commenter_agree_pct: (SELECT commenter_agree_pct FROM claim_stances WHERE claim = $claim.id LIMIT 1)[0].commenter_agree_pct ?? 0,
+      commenter_disagree_pct: (SELECT commenter_disagree_pct FROM claim_stances WHERE claim = $claim.id LIMIT 1)[0].commenter_disagree_pct ?? 0,
+      user_stance: (SELECT user_stance FROM claim_stances WHERE claim = $claim.id LIMIT 1)[0].user_stance,
+      user_note: (SELECT user_note FROM claim_stances WHERE claim = $claim.id LIMIT 1)[0].user_note
+    } ELSE NULL END;
   `;
 
   return { sql, params: { claimId } };

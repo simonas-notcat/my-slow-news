@@ -27,7 +27,8 @@ export function formatConfidence(confidence: number): {
   return { percentage, barWidth: `${percentage}%` };
 }
 
-export function formatDate(date: Date | string): string {
+export function formatDate(date?: Date | string): string {
+  if (!date) return "Unknown date";
   const d = typeof date === "string" ? new Date(date) : date;
   return d.toLocaleDateString("en-US", {
     year: "numeric",
@@ -38,7 +39,8 @@ export function formatDate(date: Date | string): string {
   });
 }
 
-export function formatRelativeDate(date: Date | string): string {
+export function formatRelativeDate(date?: Date | string): string {
+  if (!date) return "unknown";
   const d = typeof date === "string" ? new Date(date) : date;
   const now = new Date();
   const diffMs = now.getTime() - d.getTime();

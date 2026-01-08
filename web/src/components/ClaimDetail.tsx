@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAppContext } from "../context/AppContext";
 import { useDatabase } from "../context/DatabaseContext";
 import { useClaimDetail } from "../hooks/useClaimDetail";
@@ -16,6 +17,7 @@ const STANCE_OPTIONS: { value: UserStance; label: string; icon: string; color: s
 
 export function ClaimDetail() {
   const { state, dispatch } = useAppContext();
+  const navigate = useNavigate();
   const { db } = useDatabase();
   const { refetch } = useClaimDetail();
   const [note, setNote] = useState("");
@@ -24,7 +26,7 @@ export function ClaimDetail() {
   const claim = state.claimDetail;
 
   const handleBack = () => {
-    dispatch({ type: "GO_BACK" });
+    navigate("/claims");
   };
 
   const handleSelectStance = async (stance: UserStance) => {
@@ -46,6 +48,35 @@ export function ClaimDetail() {
       setIsSaving(false);
     }
   };
+
+  if (state.error && !claim) {
+    return (
+      <div className="max-w-2xl mx-auto p-6">
+        <button
+          onClick={handleBack}
+          className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-6"
+        >
+          ← Back to list
+        </button>
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+          <div className="text-4xl mb-4">⚠️</div>
+          <h3 className="text-lg font-medium text-red-900 mb-2">
+            Failed to load claim details
+          </h3>
+          <p className="text-sm text-red-700 mb-4">{state.error}</p>
+          <button
+            onClick={() => {
+              dispatch({ type: "SET_ERROR", error: null });
+              refetch();
+            }}
+            className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (state.isLoading || !claim) {
     return <LoadingSpinner message="Loading claim details..." />;

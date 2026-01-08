@@ -5,6 +5,7 @@ import {
   useState,
   useRef,
   useCallback,
+  useMemo,
   type ReactNode,
 } from "react";
 import Surreal from "surrealdb";
@@ -94,10 +95,14 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // Memoize context value to prevent unnecessary re-renders
+  const value = useMemo(
+    () => ({ db, isConnected, error, connect, disconnect }),
+    [db, isConnected, error, connect, disconnect]
+  );
+
   return (
-    <DatabaseContext.Provider
-      value={{ db, isConnected, error, connect, disconnect }}
-    >
+    <DatabaseContext.Provider value={value}>
       {children}
     </DatabaseContext.Provider>
   );

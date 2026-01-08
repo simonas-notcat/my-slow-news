@@ -1,5 +1,5 @@
 import { memo, useCallback } from "react";
-import { useAppContext } from "../context/AppContext";
+import { useNavigate } from "react-router-dom";
 import { getStanceIndicator, formatConfidence, formatRelativeDate } from "../utils/formatters";
 import type { ClaimListItem } from "../types";
 
@@ -9,22 +9,22 @@ interface ClaimItemProps {
 }
 
 export const ClaimItem = memo(function ClaimItem({ claim, isSelected }: ClaimItemProps) {
-  const { dispatch } = useAppContext();
+  const navigate = useNavigate();
   const stanceInfo = getStanceIndicator(claim.user_stance);
   const confidence = formatConfidence(claim.confidence);
 
   const handleClick = useCallback(() => {
-    dispatch({ type: "VIEW_DETAIL", claimId: claim.id });
-  }, [dispatch, claim.id]);
+    navigate(`/claims/${claim.id}`);
+  }, [navigate, claim.id]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
-        dispatch({ type: "VIEW_DETAIL", claimId: claim.id });
+        navigate(`/claims/${claim.id}`);
       }
     },
-    [dispatch, claim.id]
+    [navigate, claim.id]
   );
 
   return (
@@ -83,9 +83,14 @@ export const ClaimItem = memo(function ClaimItem({ claim, isSelected }: ClaimIte
             </div>
 
             {/* Date */}
-            <time dateTime={new Date(claim.extracted_at).toISOString()}>
-              {formatRelativeDate(claim.extracted_at)}
-            </time>
+            {claim.extracted_at && (
+              <time dateTime={new Date(claim.extracted_at).toISOString()}>
+                {formatRelativeDate(claim.extracted_at)}
+              </time>
+            )}
+            {!claim.extracted_at && (
+              <span>{formatRelativeDate(undefined)}</span>
+            )}
           </div>
         </div>
 

@@ -1,7 +1,9 @@
 import { useState } from "react";
+import { useSearchParams, useLocation } from "react-router-dom";
 import { useAppContext } from "../context/AppContext";
 import { usePredicates } from "../hooks/usePredicates";
 import { formatFiltersDisplay } from "../utils/formatters";
+import type { FilterState } from "../types";
 
 const STANCE_OPTIONS = [
   { value: "all", label: "All claims" },
@@ -22,28 +24,52 @@ const DAYS_OPTIONS = [
 ] as const;
 
 export function FilterBar() {
-  const { state, dispatch } = useAppContext();
+  const { state } = useAppContext();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
   const { predicates } = usePredicates();
-  const [subjectInput, setSubjectInput] = useState(state.filters.subject || "");
+
+  // Only show on /claims route
+  if (location.pathname !== "/claims") {
+    return null;
+  }
+
+  // Read filters from URL
+  const filters: FilterState = {
+    predicate: searchParams.get("predicate") || null,
+    subject: searchParams.get("subject") || null,
+    days: searchParams.get("days") ? Number(searchParams.get("days")) : 30,
+    stanceFilter: (searchParams.get("stance") || "all") as FilterState["stanceFilter"],
+  };
+
+  const [subjectInput, setSubjectInput] = useState(filters.subject || "");
+
+  const handleSetFilter = (key: string, value: string | null) => {
+    const params = new URLSearchParams(searchParams);
+    if (value) {
+      params.set(key, value);
+    } else {
+      params.delete(key);
+    }
+    params.delete("page"); // Reset to page 1 when filters change
+    setSearchParams(params);
+  };
 
   const handleSubjectSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    dispatch({
-      type: "SET_FILTERS",
-      filters: { subject: subjectInput || null },
-    });
+    handleSetFilter("subject", subjectInput || null);
   };
 
   const handleReset = () => {
     setSubjectInput("");
-    dispatch({ type: "RESET_FILTERS" });
+    setSearchParams({});
   };
 
   const hasActiveFilters =
-    state.filters.predicate ||
-    state.filters.subject ||
-    state.filters.days !== 30 ||
-    state.filters.stanceFilter !== "all";
+    filters.predicate ||
+    filters.subject ||
+    filters.days !== 30 ||
+    filters.stanceFilter !== "all";
 
   return (
     <div className="bg-gray-50 border-b border-gray-200 px-4 py-3">
@@ -51,7 +77,7 @@ export function FilterBar() {
         {/* Current filters summary */}
         <div className="flex items-center justify-between mb-3">
           <p className="text-sm text-gray-600">
-            Showing: <span className="font-medium">{formatFiltersDisplay(state.filters)}</span>
+            Showing: <span className="font-medium">{formatFiltersDisplay(filters)}</span>
             {state.totalClaims > 0 && (
               <span className="text-gray-400 ml-2">({state.totalClaims} claims)</span>
             )}
@@ -70,13 +96,8 @@ export function FilterBar() {
         <div className="flex flex-wrap gap-3">
           {/* Predicate filter */}
           <select
-            value={state.filters.predicate || ""}
-            onChange={(e) =>
-              dispatch({
-                type: "SET_FILTERS",
-                filters: { predicate: e.target.value || null },
-              })
-            }
+            value={filters.predicate || ""}
+            onChange={(e) => handleSetFilter("predicate", e.target.value || null)}
             className="px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="">All predicates</option>
@@ -106,13 +127,8 @@ export function FilterBar() {
 
           {/* Days filter */}
           <select
-            value={state.filters.days ?? ""}
-            onChange={(e) =>
-              dispatch({
-                type: "SET_FILTERS",
-                filters: { days: e.target.value ? Number(e.target.value) : null },
-              })
-            }
+            value={filters.days ?? ""}
+            onChange={(e) => handleSetFilter("days", e.target.value || null)}
             className="px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             {DAYS_OPTIONS.map((opt) => (
@@ -124,15 +140,8 @@ export function FilterBar() {
 
           {/* Stance filter */}
           <select
-            value={state.filters.stanceFilter}
-            onChange={(e) =>
-              dispatch({
-                type: "SET_FILTERS",
-                filters: {
-                  stanceFilter: e.target.value as typeof state.filters.stanceFilter,
-                },
-              })
-            }
+            value={filters.stanceFilter}
+            onChange={(e) => handleSetFilter("stance", e.target.value || null)}
             className="px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             {STANCE_OPTIONS.map((opt) => (

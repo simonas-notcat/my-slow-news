@@ -82,6 +82,35 @@ describe("ClaimListItemSchema", () => {
 
     expect(() => ClaimListItemSchema.parse(item)).toThrow();
   });
+
+  test("transforms record ID object to string", () => {
+    const item = {
+      id: { tb: "claim", id: "123" }, // SurrealDB record ID object
+      subject: "Rust",
+      predicate: "is-faster-than",
+      object: "Python",
+      confidence: 0.85,
+      extracted_at: "2025-01-15T10:00:00Z",
+    };
+
+    const result = ClaimListItemSchema.parse(item);
+    expect(typeof result.id).toBe("string");
+    expect(result.id).toBe('claim:"123"');
+  });
+
+  test("handles string IDs without transformation", () => {
+    const item = {
+      id: "claim:abc123",
+      subject: "Rust",
+      predicate: "is-faster-than",
+      object: "Python",
+      confidence: 0.85,
+      extracted_at: "2025-01-15T10:00:00Z",
+    };
+
+    const result = ClaimListItemSchema.parse(item);
+    expect(result.id).toBe("claim:abc123");
+  });
 });
 
 describe("ClaimDetailSchema", () => {
@@ -144,6 +173,36 @@ describe("ClaimDetailSchema", () => {
     expect(result.content_author_stance).toBe("disagrees");
     expect(result.user_stance).toBe("agrees");
     expect(result.user_note).toBe("Actually, Svelte doesn't use virtual DOM");
+  });
+
+  test("transforms record ID object to string in detail", () => {
+    const detail = {
+      id: { tb: "claim", id: "456" }, // SurrealDB record ID object
+      subject: "TypeScript",
+      predicate: "is-better-than",
+      object: "JavaScript",
+      confidence: 0.9,
+      extracted_at: "2025-01-15T10:00:00Z",
+    };
+
+    const result = ClaimDetailSchema.parse(detail);
+    expect(typeof result.id).toBe("string");
+    expect(result.id).toBe('claim:"456"');
+  });
+
+  test("handles complex SurrealDB record IDs", () => {
+    const detail = {
+      id: { tb: "claim", id: { String: "uuid-here" } },
+      subject: "TypeScript",
+      predicate: "is-better-than",
+      object: "JavaScript",
+      confidence: 0.9,
+      extracted_at: "2025-01-15T10:00:00Z",
+    };
+
+    const result = ClaimDetailSchema.parse(detail);
+    expect(typeof result.id).toBe("string");
+    expect(result.id).toBe('claim:{"String":"uuid-here"}');
   });
 });
 
