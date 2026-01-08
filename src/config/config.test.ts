@@ -67,7 +67,7 @@ describe("config", () => {
       const config = loadConfig();
 
       // Should use the value from config.yaml
-      expect(config.database.url).toBe("ws://localhost:8000/rpc");
+      expect(config.database.url).toBe("ws://localhost:8666/rpc");
     });
 
     test("overrides config.yaml with DATABASE_URL environment variable", () => {

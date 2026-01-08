@@ -106,33 +106,68 @@ export class ClaimDeduplicationService {
     embedding: number[],
     duplicate: SimilarClaim,
   ): Promise<DeduplicationResult> {
-    // Create the claim as non-canonical, linked to the duplicate
-    const [created] = await this.db.query<[ClaimRecord[]]>(
-      `
-      CREATE claim SET
-        subject = $subject,
-        predicate = $predicate,
-        object = $object,
-        confidence = $confidence,
-        embedding = $embedding,
-        embedding_model = $model,
-        embedded_at = time::now(),
-        extracted_at = time::now(),
-        is_canonical = false,
-        canonical_claim = $canonical
-      `,
+    // Check if this exact triple already exists
+    const [existing] = await this.db.query<[ClaimRecord[]]>(
+      `SELECT * FROM claim WHERE subject = $subject AND predicate = $predicate AND object = $object`,
       {
         subject: claim.subject,
         predicate: claim.predicate,
         object: claim.object,
-        confidence: claim.confidence,
-        embedding,
-        model: this.embeddings.name,
-        canonical: duplicate.claim.id,
       },
     );
 
-    const newClaim = created[0];
+    let newClaim: ClaimRecord;
+
+    if (existing && existing.length > 0) {
+      // Update existing claim to link to canonical duplicate
+      const [updated] = await this.db.query<[ClaimRecord[]]>(
+        `
+        UPDATE $id SET
+          confidence = math::max([confidence, $confidence]),
+          embedding = $embedding,
+          embedding_model = $model,
+          embedded_at = time::now(),
+          is_canonical = false,
+          canonical_claim = $canonical
+        RETURN AFTER
+        `,
+        {
+          id: existing[0].id,
+          confidence: claim.confidence,
+          embedding,
+          model: this.embeddings.name,
+          canonical: duplicate.claim.id,
+        },
+      );
+      newClaim = updated[0];
+    } else {
+      // Create the claim as non-canonical, linked to the duplicate
+      const [created] = await this.db.query<[ClaimRecord[]]>(
+        `
+        CREATE claim SET
+          subject = $subject,
+          predicate = $predicate,
+          object = $object,
+          confidence = $confidence,
+          embedding = $embedding,
+          embedding_model = $model,
+          embedded_at = time::now(),
+          extracted_at = time::now(),
+          is_canonical = false,
+          canonical_claim = $canonical
+        `,
+        {
+          subject: claim.subject,
+          predicate: claim.predicate,
+          object: claim.object,
+          confidence: claim.confidence,
+          embedding,
+          model: this.embeddings.name,
+          canonical: duplicate.claim.id,
+        },
+      );
+      newClaim = created[0];
+    }
 
     // Create similarity relation
     await this.db.query(
@@ -183,31 +218,64 @@ export class ClaimDeduplicationService {
     embedding: number[],
     related: SimilarClaim[],
   ): Promise<DeduplicationResult> {
-    // Create new canonical claim
-    const [created] = await this.db.query<[ClaimRecord[]]>(
-      `
-      CREATE claim SET
-        subject = $subject,
-        predicate = $predicate,
-        object = $object,
-        confidence = $confidence,
-        embedding = $embedding,
-        embedding_model = $model,
-        embedded_at = time::now(),
-        extracted_at = time::now(),
-        is_canonical = true
-      `,
+    // Check if claim with this exact triple already exists
+    const [existing] = await this.db.query<[ClaimRecord[]]>(
+      `SELECT * FROM claim WHERE subject = $subject AND predicate = $predicate AND object = $object`,
       {
         subject: claim.subject,
         predicate: claim.predicate,
         object: claim.object,
-        confidence: claim.confidence,
-        embedding,
-        model: this.embeddings.name,
       },
     );
 
-    const newClaim = created[0];
+    let newClaim: ClaimRecord;
+
+    if (existing && existing.length > 0) {
+      // Update existing claim with embedding and ensure it's canonical
+      const [updated] = await this.db.query<[ClaimRecord[]]>(
+        `
+        UPDATE $id SET
+          confidence = math::max([confidence, $confidence]),
+          embedding = $embedding,
+          embedding_model = $model,
+          embedded_at = time::now(),
+          is_canonical = true
+        RETURN AFTER
+        `,
+        {
+          id: existing[0].id,
+          confidence: claim.confidence,
+          embedding,
+          model: this.embeddings.name,
+        },
+      );
+      newClaim = updated[0];
+    } else {
+      // Create new canonical claim
+      const [created] = await this.db.query<[ClaimRecord[]]>(
+        `
+        CREATE claim SET
+          subject = $subject,
+          predicate = $predicate,
+          object = $object,
+          confidence = $confidence,
+          embedding = $embedding,
+          embedding_model = $model,
+          embedded_at = time::now(),
+          extracted_at = time::now(),
+          is_canonical = true
+        `,
+        {
+          subject: claim.subject,
+          predicate: claim.predicate,
+          object: claim.object,
+          confidence: claim.confidence,
+          embedding,
+          model: this.embeddings.name,
+        },
+      );
+      newClaim = created[0];
+    }
 
     // Create similarity relations for related claims
     for (const rel of related) {

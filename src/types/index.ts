@@ -21,7 +21,7 @@ export const ConfigSchema = z.object({
     format: z.literal("markdown"),
   }),
   database: z.object({
-    url: z.string().default("ws://localhost:8000/rpc"),
+    url: z.string().default("ws://localhost:8666/rpc"),
     namespace: z.string().default("myslownews"),
     database: z.string().default("main"),
   }),

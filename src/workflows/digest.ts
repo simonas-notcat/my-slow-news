@@ -782,7 +782,8 @@ const semanticAnalysisStep = createStep({
 
         for (let i = 0; i < validClaims.length; i++) {
           const claim = validClaims[i];
-          const embedding = embeddings[i];
+          const embeddingResult = embeddings[i];
+          const embedding = embeddingResult.embedding; // Extract array from result object
           const claimKey = `${claim.subject}|${claim.predicate}|${claim.object}`;
 
           // Query for similar existing claims
@@ -852,7 +853,8 @@ const semanticAnalysisStep = createStep({
         // For each new claim, check for contradictions with existing claims
         for (let i = 0; i < validClaims.length && semanticAnalysis.contradictions.length < maxContradictions; i++) {
           const claim = validClaims[i];
-          const embedding = embeddings[i];
+          const embeddingResult = embeddings[i];
+          const embedding = embeddingResult.embedding; // Extract array from result object
 
           // Find similar existing claims that might contradict
           const [candidates] = await db.query<[Array<{

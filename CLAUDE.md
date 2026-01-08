@@ -172,7 +172,7 @@ SURREALDB_PASSWORD=your-password
 ```bash
 # Database URL - overrides config.yaml database.url if set
 # Useful for switching between local and cloud SurrealDB instances
-DATABASE_URL=ws://localhost:8000/rpc           # Local
+DATABASE_URL=ws://localhost:8666/rpc           # Local
 # DATABASE_URL=wss://your-db.surreal.cloud/rpc  # Cloud
 
 # OpenAI API key (required if using OpenAI embeddings)
@@ -204,7 +204,7 @@ output:
   format: markdown
 
 database:
-  url: ws://localhost:8000/rpc
+  url: ws://localhost:8666/rpc
   namespace: myslownews
   database: main
 

@@ -24,7 +24,7 @@ output:
   format: markdown
 
 database:
-  url: ws://localhost:8000/rpc
+  url: ws://localhost:8666/rpc
   namespace: myslownews
   database: main
   # Credentials are loaded from environment variables:

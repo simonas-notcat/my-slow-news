@@ -149,7 +149,7 @@ Edit `.env` and add your Anthropic API key:
 
 ```
 ANTHROPIC_API_KEY=sk-ant-...
-DATABASE_URL=ws://localhost:8000/rpc
+DATABASE_URL=ws://localhost:8666/rpc
 ```
 
 ### 3. Start the Database
@@ -161,7 +161,7 @@ docker-compose up surrealdb -d
 ```
 
 This will:
-- Start SurrealDB on port 8000
+- Start SurrealDB on port 8666
 - Create a persistent volume for data storage
 - Use credentials: `root`/`root` (change in production!)
 
@@ -352,7 +352,7 @@ output:
   format: markdown
 
 database:
-  url: ws://localhost:8000/rpc
+  url: ws://localhost:8666/rpc
   namespace: myslownews
   database: main
 

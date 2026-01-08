@@ -34,11 +34,11 @@ describe("validateEnv", () => {
     process.env.ANTHROPIC_API_KEY = "sk-ant-test123";
     process.env.SURREALDB_USERNAME = "admin";
     process.env.SURREALDB_PASSWORD = "password123";
-    process.env.DATABASE_URL = "ws://localhost:8000/rpc";
+    process.env.DATABASE_URL = "ws://localhost:8666/rpc";
 
     const result = validateEnv();
 
-    expect(result.DATABASE_URL).toBe("ws://localhost:8000/rpc");
+    expect(result.DATABASE_URL).toBe("ws://localhost:8666/rpc");
   });
 
   test("includes optional OPENAI_API_KEY when set", () => {
@@ -126,9 +126,9 @@ describe("validateEnv", () => {
 
   test("accepts valid DATABASE_URL formats", () => {
     const validUrls = [
-      "ws://localhost:8000/rpc",
+      "ws://localhost:8666/rpc",
       "wss://my-instance.surreal.cloud/rpc",
-      "http://localhost:8000/rpc",
+      "http://localhost:8666/rpc",
       "https://my-instance.surreal.cloud/rpc",
     ];
 

@@ -3,7 +3,7 @@ import { useDatabase } from "../context/DatabaseContext";
 import type { DatabaseConfig } from "../types";
 
 const DEFAULT_CONFIG: DatabaseConfig = {
-  url: "ws://localhost:8000/rpc",
+  url: "ws://localhost:8666/rpc",
   namespace: "myslownews",
   database: "main",
   username: "",
@@ -66,7 +66,7 @@ export function ConnectionDialog() {
               type="text"
               value={config.url}
               onChange={(e) => setConfig({ ...config, url: e.target.value })}
-              placeholder="ws://localhost:8000/rpc"
+              placeholder="ws://localhost:8666/rpc"
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             <p className="text-xs text-gray-500 mt-1">

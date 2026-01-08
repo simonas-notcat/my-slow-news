@@ -248,7 +248,7 @@ SurrealDB Cloud automatically handles CORS. For self-hosted instances, ensure yo
 
 ```bash
 # When starting SurrealDB, allow your domain
-surreal start --bind 0.0.0.0:8000 --user root --pass root --allow-all
+surreal start --bind 0.0.0.0:8666 --user root --pass root --allow-all
 ```
 
 ## Troubleshooting

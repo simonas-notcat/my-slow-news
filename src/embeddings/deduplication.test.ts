@@ -69,9 +69,10 @@ describe("ClaimDeduplicationService", () => {
         is_canonical: true,
       };
 
-      // Mock: no similar claims found, then CREATE returns new claim
+      // Mock: no similar claims found, SELECT returns no existing, then CREATE returns new claim
       mockQuery
         .mockImplementationOnce(() => Promise.resolve([[]])) // findSimilarClaims
+        .mockImplementationOnce(() => Promise.resolve([[]])) // SELECT existing
         .mockImplementationOnce(() => Promise.resolve([[newClaimRecord]])); // CREATE
 
       const service = new ClaimDeduplicationService(
@@ -129,6 +130,7 @@ describe("ClaimDeduplicationService", () => {
             ],
           ]),
         ) // findSimilarClaims
+        .mockImplementationOnce(() => Promise.resolve([[]])) // SELECT existing (no exact triple found)
         .mockImplementationOnce(() => Promise.resolve([[newClaimRecord]])) // CREATE non-canonical
         .mockImplementationOnce(() => Promise.resolve([[]])) // RELATE
         .mockImplementationOnce(() => Promise.resolve([[]])); // UPDATE confidence
@@ -152,7 +154,7 @@ describe("ClaimDeduplicationService", () => {
       expect(result.relatedClaims).toEqual([]);
 
       // Verify that UPDATE was called to increase confidence
-      const updateCall = mockQuery.mock.calls[3];
+      const updateCall = mockQuery.mock.calls[4];
       expect(updateCall[0]).toContain("UPDATE");
     });
 
@@ -190,6 +192,7 @@ describe("ClaimDeduplicationService", () => {
             ],
           ]),
         ) // findSimilarClaims
+        .mockImplementationOnce(() => Promise.resolve([[]])) // SELECT existing (no exact triple)
         .mockImplementationOnce(() => Promise.resolve([[newClaimRecord]])) // CREATE canonical
         .mockImplementationOnce(() => Promise.resolve([[]])); // RELATE related
 
