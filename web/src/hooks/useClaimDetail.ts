@@ -30,8 +30,10 @@ export function useClaimDetail() {
         return; // Stale request, ignore results
       }
 
-      // The result from RETURN statement is the last element
-      const rawDetail = result[result.length - 1];
+      // The RETURN statement returns an array with a single element
+      // result[0-2] are the LET statements, result[3] is the RETURN
+      const returnResult = result[result.length - 1];
+      const rawDetail = Array.isArray(returnResult) ? returnResult[0] : returnResult;
 
       if (rawDetail) {
         // Validate with Zod
