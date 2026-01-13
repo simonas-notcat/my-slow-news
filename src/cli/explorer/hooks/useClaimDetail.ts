@@ -11,6 +11,7 @@ export function useClaimDetail(claimId: string | null) {
   const fetchDetail = useCallback(async () => {
     if (!db || !isConnected || !claimId) return;
 
+    dispatch({ type: "SET_ERROR", error: null });
     dispatch({ type: "SET_LOADING", loading: true });
 
     try {

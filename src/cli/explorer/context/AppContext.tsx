@@ -111,6 +111,8 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         ...state,
         currentScreen: "detail",
         selectedClaimId: action.claimId,
+        claimDetail: null,
+        error: null,
         isLoading: true,
       };
 

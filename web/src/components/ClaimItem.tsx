@@ -14,14 +14,14 @@ export const ClaimItem = memo(function ClaimItem({ claim, isSelected }: ClaimIte
   const confidence = formatConfidence(claim.confidence);
 
   const handleClick = useCallback(() => {
-    navigate(`/claims/${claim.id}`);
+    navigate(`/claims/${encodeURIComponent(claim.id)}`);
   }, [navigate, claim.id]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
-        navigate(`/claims/${claim.id}`);
+        navigate(`/claims/${encodeURIComponent(claim.id)}`);
       }
     },
     [navigate, claim.id]

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppContext } from "../context/AppContext";
 import { useDatabase } from "../context/DatabaseContext";
@@ -22,8 +22,22 @@ export function ClaimDetail() {
   const { refetch } = useClaimDetail();
   const [note, setNote] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const claim = state.claimDetail;
+
+  useEffect(() => {
+    setNote(claim?.user_note ?? "");
+  }, [claim?.id, claim?.user_note]);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
+        toastTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   const handleBack = () => {
     navigate("/claims");
@@ -39,7 +53,10 @@ export function ClaimDetail() {
       dispatch({ type: "SET_TOAST", message: `Marked as "${stance}"` });
       refetch();
 
-      setTimeout(() => {
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
+      }
+      toastTimeoutRef.current = setTimeout(() => {
         dispatch({ type: "SET_TOAST", message: null });
       }, 3000);
     } catch (err) {
@@ -200,7 +217,7 @@ export function ClaimDetail() {
         <div>
           <label className="block text-sm text-gray-500 mb-1">Note</label>
           <textarea
-            value={note || claim.user_note || ""}
+            value={note}
             onChange={(e) => setNote(e.target.value)}
             placeholder="Add a note about your stance..."
             className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"

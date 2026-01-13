@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Box, Text, useInput } from "ink";
 import TextInput from "ink-text-input";
 import SelectInput from "ink-select-input";
-import { useAppContext } from "../context/AppContext.js";
+import { useAppContext, initialState } from "../context/AppContext.js";
 import { useDatabase } from "../context/DatabaseContext.js";
 import { buildPredicatesQuery } from "../utils/queries.js";
 import type { FilterState, PredicateOption } from "../types.js";
@@ -60,6 +60,10 @@ export const FilterScreen: React.FC = () => {
     fetchPredicates();
   }, [db, isConnected]);
 
+  useEffect(() => {
+    setLocalFilters(state.filters);
+  }, [state.filters]);
+
   // Navigate between fields
   useInput((input, key) => {
     if (key.escape) {
@@ -90,6 +94,7 @@ export const FilterScreen: React.FC = () => {
     if (input === "r") {
       // Reset
       dispatch({ type: "RESET_FILTERS" });
+      setLocalFilters(initialState.filters);
       return;
     }
   });
@@ -102,15 +107,30 @@ export const FilterScreen: React.FC = () => {
     })),
   ];
 
+  const predicateInitialIndex = Math.max(
+    0,
+    predicateItems.findIndex((p) => p.value === localFilters.predicate)
+  );
+
   const daysItems = TIME_OPTIONS.map((o) => ({
     label: o.label,
     value: o.value,
   }));
 
+  const daysInitialIndex = (() => {
+    const index = daysItems.findIndex((d) => d.value === localFilters.days);
+    return index >= 0 ? index : 1;
+  })();
+
   const stanceItems = STANCE_OPTIONS.map((o) => ({
     label: o.label,
     value: o.value,
   }));
+
+  const stanceInitialIndex = Math.max(
+    0,
+    stanceItems.findIndex((s) => s.value === localFilters.stanceFilter)
+  );
 
   return (
     <Box
@@ -135,11 +155,7 @@ export const FilterScreen: React.FC = () => {
           <Box marginLeft={2}>
             <SelectInput
               items={predicateItems}
-              initialIndex={
-                predicateItems.findIndex(
-                  (p) => p.value === localFilters.predicate
-                ) || 0
-              }
+              initialIndex={predicateInitialIndex}
               onSelect={(item) => {
                 setLocalFilters((f) => ({
                   ...f,
@@ -169,6 +185,9 @@ export const FilterScreen: React.FC = () => {
               onChange={(value) =>
                 setLocalFilters((f) => ({ ...f, subject: value || null }))
               }
+              onSubmit={() =>
+                dispatch({ type: "SET_FILTERS", filters: localFilters })
+              }
               placeholder="Type to filter by subject..."
             />
           </Box>
@@ -190,9 +209,7 @@ export const FilterScreen: React.FC = () => {
           <Box marginLeft={2}>
             <SelectInput
               items={daysItems}
-              initialIndex={
-                daysItems.findIndex((d) => d.value === localFilters.days) || 1
-              }
+              initialIndex={daysInitialIndex}
               onSelect={(item) => {
                 setLocalFilters((f) => ({
                   ...f,
@@ -220,11 +237,7 @@ export const FilterScreen: React.FC = () => {
           <Box marginLeft={2}>
             <SelectInput
               items={stanceItems}
-              initialIndex={
-                stanceItems.findIndex(
-                  (s) => s.value === localFilters.stanceFilter
-                ) || 0
-              }
+              initialIndex={stanceInitialIndex}
               onSelect={(item) => {
                 setLocalFilters((f) => ({
                   ...f,
