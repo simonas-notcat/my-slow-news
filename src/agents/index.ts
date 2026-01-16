@@ -221,6 +221,18 @@ export {
   type StoryNarratorOutput,
 } from "../utils/story-narrator";
 
+// Re-export Notable Thread Identifier for convenience
+export {
+  createNotableThreadAgent,
+  identifyNotableThreads,
+  formatNotableThreadsMarkdown,
+  shouldIdentifyNotableThreads,
+  THREAD_TYPE_ICONS,
+  type NotableThreadInput,
+  type NotableThreadItem,
+  type NotableThreadOutput,
+} from "../utils/notable-thread-identifier";
+
 // Default agent instances for backward compatibility
 export const summarizerAgent = createSummarizerAgent();
 export const extractorAgent = createExtractorAgent();
