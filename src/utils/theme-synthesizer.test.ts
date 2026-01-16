@@ -131,7 +131,7 @@ describe("formatThemeSynthesisMarkdown", () => {
     expect(markdown).toContain("Post 1");
   });
 
-  test("formats conflicting viewpoints", () => {
+  test("formats conflicting viewpoints with sources", () => {
     const synthesis = {
       recurring_themes: [],
       conflicting_viewpoints: [
@@ -153,9 +153,15 @@ describe("formatThemeSynthesisMarkdown", () => {
     const markdown = formatThemeSynthesisMarkdown(synthesis);
 
     expect(markdown).toContain("Conflicting Viewpoints");
+    expect(markdown).toContain("Opposing stances on the same topics");
     expect(markdown).toContain("TypeScript");
     expect(markdown).toContain("View A");
     expect(markdown).toContain("View B");
+    expect(markdown).toContain("Types improve code quality");
+    expect(markdown).toContain("Types add overhead");
+    expect(markdown).toContain("Sources:");
+    expect(markdown).toContain("Post 1");
+    expect(markdown).toContain("Post 2");
   });
 
   test("formats emerging trends", () => {
@@ -173,7 +179,7 @@ describe("formatThemeSynthesisMarkdown", () => {
 
     const markdown = formatThemeSynthesisMarkdown(synthesis);
 
-    expect(markdown).toContain("Emerging Trends");
+    expect(markdown).toContain("Emerging Patterns");
     expect(markdown).toContain("AI Code Assistants");
     expect(markdown).toContain("80%");
   });

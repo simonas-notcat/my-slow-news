@@ -173,14 +173,14 @@ Identify patterns across posts and return a JSON response with:
   ],
   "conflicting_viewpoints": [
     {
-      "topic": "Topic with disagreement",
+      "topic": "Specific topic with disagreement",
       "viewpoint_a": {
-        "position": "First position",
-        "sources": ["post title supporting this"]
+        "position": "Specific claim or stance from the post(s)",
+        "sources": ["exact post title"]
       },
       "viewpoint_b": {
-        "position": "Opposing position",
-        "sources": ["post title supporting this"]
+        "position": "Contrasting specific claim or stance from other post(s)",
+        "sources": ["exact post title"]
       }
     }
   ],
@@ -192,6 +192,15 @@ Identify patterns across posts and return a JSON response with:
     }
   ]
 }
+
+CRITICAL for conflicting_viewpoints:
+- ONLY include viewpoints where posts express genuinely opposing stances on the SAME topic
+- Look for posts where one has positive sentiment and another has negative sentiment on the same subject
+- The positions MUST be SPECIFIC, not generic. Include concrete details, names, or examples from the posts.
+- BAD: "Tool X is good" vs "Tool X has problems" (too generic)
+- GOOD: "Cursor's AI completions save 30% coding time" vs "Cursor's suggestions often miss context and require manual fixes"
+- Each viewpoint must cite the EXACT post title(s) from which it was derived
+- Only add conflicting_viewpoints if there is genuine disagreement evidenced in the posts
 
 Focus on substantive patterns. Return empty arrays if no clear patterns emerge.`;
 
@@ -247,16 +256,27 @@ export function formatThemeSynthesisMarkdown(
     }
   }
 
-  // Conflicting viewpoints - table format
+  // Conflicting viewpoints - table format with sources
   if (synthesis.conflicting_viewpoints.length > 0) {
     sections.push("## Conflicting Viewpoints\n");
+    sections.push("*Opposing stances on the same topics, sourced from different posts:*\n");
     sections.push("| Topic | View A | View B |");
     sections.push("|-------|--------|--------|");
     for (const conflict of synthesis.conflicting_viewpoints) {
       const topic = escapeTableCell(conflict.topic);
       const viewA = escapeTableCell(conflict.viewpoint_a.position);
       const viewB = escapeTableCell(conflict.viewpoint_b.position);
-      sections.push(`| ${topic} | ${viewA} | ${viewB} |`);
+      sections.push(`| **${topic}** | ${viewA} | ${viewB} |`);
+    }
+    sections.push("");
+
+    // Add sources below the table for reference
+    sections.push("**Sources:**");
+    for (const conflict of synthesis.conflicting_viewpoints) {
+      const safeTopic = sanitizeMarkdown(conflict.topic);
+      const sourcesA = conflict.viewpoint_a.sources.map((s) => sanitizeMarkdown(s)).join(", ");
+      const sourcesB = conflict.viewpoint_b.sources.map((s) => sanitizeMarkdown(s)).join(", ");
+      sections.push(`- *${safeTopic}*: View A from "${sourcesA}" • View B from "${sourcesB}"`);
     }
     sections.push("");
   }
