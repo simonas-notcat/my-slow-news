@@ -66,6 +66,28 @@ link_fetching:
     - instagram.com
     - tiktok.com
 
+# Digest generation configuration
+digest:
+  format: markdown
+  # "What Matters" section configuration
+  what_matters:
+    max_topics: 6
+    low_activity_percentile: 10  # Posts below this percentile are "low activity"
+  # Top discussions section
+  top_discussions:
+    max_posts: 10
+    min_score: 10
+    min_comments: 5
+  # Notable threads within discussions
+  notable_threads:
+    max_per_post: 3
+    min_score: 5
+  # Claims display settings
+  claims:
+    min_confidence: 0.8
+    max_per_post: 3
+    show_verification_marks: true
+
 # Embedding configuration for semantic features
 embeddings:
   provider: openai  # 'openai' or 'ollama'

@@ -75,6 +75,32 @@ export const ConfigSchema = z.object({
       model: z.string().default("nomic-embed-text"),
     }).optional(),
   }).optional().default({}),
+  // Digest generation configuration
+  digest: z.object({
+    format: z.enum(["markdown", "html"]).default("markdown"),
+    // "What Matters" section configuration
+    what_matters: z.object({
+      max_topics: z.number().default(6),
+      low_activity_percentile: z.number().default(10),  // Posts below this percentile are "low activity"
+    }).optional().default({}),
+    // Top discussions section
+    top_discussions: z.object({
+      max_posts: z.number().default(10),
+      min_score: z.number().default(10),
+      min_comments: z.number().default(5),
+    }).optional().default({}),
+    // Notable threads within discussions
+    notable_threads: z.object({
+      max_per_post: z.number().default(3),
+      min_score: z.number().default(5),
+    }).optional().default({}),
+    // Claims display settings
+    claims: z.object({
+      min_confidence: z.number().default(0.8),
+      max_per_post: z.number().default(3),
+      show_verification_marks: z.boolean().default(true),
+    }).optional().default({}),
+  }).optional().default({}),
   // Semantic features configuration
   semantic: z.object({
     deduplication: z.object({

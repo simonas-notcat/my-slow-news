@@ -261,15 +261,16 @@ export function formatThemeSynthesisMarkdown(
     sections.push("");
   }
 
-  // Emerging trends
+  // Emerging patterns (bullet list format)
   if (synthesis.emerging_trends.length > 0) {
-    sections.push("## Emerging Trends\n");
+    sections.push("## Emerging Patterns\n");
     for (const trend of synthesis.emerging_trends) {
       const confidence = Math.round(trend.confidence * 100);
-      sections.push(`### ${sanitizeMarkdown(trend.trend)} (${confidence}% confidence)\n`);
+      sections.push(`- **${sanitizeMarkdown(trend.trend)}** (${confidence}% confidence)`);
       const safeEvidence = trend.evidence.map(e => sanitizeMarkdown(e)).join("; ");
-      sections.push(`**Evidence:** ${safeEvidence}\n`);
+      sections.push(`  - Evidence: ${safeEvidence}`);
     }
+    sections.push("");
   }
 
   return sections.join("\n");

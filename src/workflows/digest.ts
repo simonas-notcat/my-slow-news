@@ -976,23 +976,34 @@ const generateDigestStep = createStep({
     let markdown = `# My Slow News - ${date}\n\n`;
     markdown += `*${humanDate} • ${postCount} posts • ${subredditCount} subreddits • ${claimCount} claims extracted*\n\n`;
 
-    // Generate TL;DR section
+    // Generate "What Matters" table
     if (summaries_with_claims.length > 0) {
-      markdown += `## TL;DR\n\n`;
-      for (const item of summaries_with_claims.slice(0, 5)) {
+      markdown += `## What Matters\n\n`;
+      markdown += `| Priority | Discussion | Why It Matters |\n`;
+      markdown += `|----------|------------|----------------|\n`;
+
+      // Show top discussions (max 6)
+      for (const item of summaries_with_claims.slice(0, 6)) {
         const sentiment = item.summary.sentiment;
-        const emoji = sentiment === "positive" ? "🔥" :
-                     sentiment === "negative" ? "⚠️" :
-                     sentiment === "mixed" ? "🔄" : "📰";
-        // Create a one-line summary from the first sentence (sanitized)
+        const controversy = item.summary.controversy_level;
+        const commentCount = item.post.num_comments || 0;
+
+        // Determine priority indicator based on controversy and activity
+        let priority = "🟢";
+        if (controversy === "high" || sentiment === "negative" || commentCount > 100) {
+          priority = "🔴";
+        } else if (controversy === "medium" || sentiment === "mixed" || commentCount > 50) {
+          priority = "🟡";
+        }
+
+        const safeTitle = sanitizeMarkdown(item.post.title);
+        const slug = slugify(item.post.title);
         const firstSentence = item.summary.summary.split(/[.!?]/)[0].trim();
-        const shortSummary = sanitizeMarkdown(
-          firstSentence.length > 100 ? firstSentence.slice(0, 100) + "..." : firstSentence
+        const impact = sanitizeMarkdown(
+          firstSentence.length > 80 ? firstSentence.slice(0, 80) + "..." : firstSentence
         );
-        const safeTitle = sanitizeMarkdown(
-          item.post.title.slice(0, 60) + (item.post.title.length > 60 ? "..." : "")
-        );
-        markdown += `- ${emoji} **${safeTitle}** — ${shortSummary}\n`;
+
+        markdown += `| ${priority} | [${safeTitle}](#${slug}) | ${impact} |\n`;
       }
       markdown += `\n---\n\n`;
     }
@@ -1058,58 +1069,63 @@ const generateDigestStep = createStep({
         const { post, summary, claims } = item;
         const slug = slugify(post.title);
         const safeTitle = sanitizeMarkdown(post.title);
-        const safeAuthor = sanitizeMarkdown(post.author);
 
-        markdown += `### [${safeTitle}](${post.permalink}) {#${slug}}\n\n`;
+        // Determine if this is a low-activity post (collapse it)
+        const commentCount = post.num_comments || 0;
+        const isLowActivity = commentCount < 10 && summary.information_density === "sparse";
 
-        // Build metadata line with quality indicators
-        const confidencePct = Math.round((summary.confidence ?? 0.7) * 100);
-        const controversyBadge = summary.controversy_level !== "none"
-          ? ` • **Controversy:** ${summary.controversy_level}`
-          : "";
-        const densityIndicator = summary.information_density === "sparse" ? " ⚠️" : "";
+        if (isLowActivity) {
+          markdown += `<details>\n<summary><strong><a href="${post.permalink}">${safeTitle}</a></strong> • ${post.score}↑ • ${commentCount} comments</summary>\n\n`;
+        } else {
+          markdown += `### [${safeTitle}](${post.permalink}) {#${slug}}\n\n`;
 
-        markdown += `**u/${safeAuthor}** • Score: ${post.score} • Confidence: ${confidencePct}%${controversyBadge}${densityIndicator}\n\n`;
+          // Simplified metadata line
+          const confidencePct = Math.round((summary.confidence ?? 0.7) * 100);
+          const controversyBadge = summary.controversy_level === "high"
+            ? ` • ⚠️ **Controversial**`
+            : summary.controversy_level === "medium"
+            ? ` • ⚡ Debate`
+            : "";
+
+          markdown += `**${post.score}↑** • ${commentCount} comments • ${confidencePct}% confidence${controversyBadge}\n\n`;
+        }
+
         markdown += `${sanitizeMarkdown(summary.summary)}\n\n`;
 
-        // Show missing context warnings
-        if (summary.missing_context && summary.missing_context.length > 0) {
-          const safeContext = summary.missing_context.map(c => sanitizeMarkdown(c)).join(", ");
+        // Show missing context warnings (only for moderate/low confidence)
+        if ((summary.confidence ?? 0.7) < 0.75 && summary.missing_context && summary.missing_context.length > 0) {
+          const safeContext = summary.missing_context.slice(0, 2).map(c => sanitizeMarkdown(c)).join(", ");
           markdown += `> ⚠️ **Missing context:** ${safeContext}\n\n`;
         }
 
-        // Key topics as tags
-        if (summary.key_topics?.length > 0) {
-          markdown += `**Topics:** ${summary.key_topics.map(t => `\`${sanitizeMarkdown(t)}\``).join(" ")}\n\n`;
-        }
-
-        // Claims in natural language format with related claims
-        if (claims?.length > 0) {
-          markdown += `**Key Claims:**\n`;
-          for (const claim of claims.slice(0, 5)) { // Limit to top 5 claims
-            markdown += `- ${claimToNaturalLanguage(claim)}\n`;
-
-            // Show related claims if available
-            if (semantic_analysis?.relatedClaimsMap) {
-              const claimKey = `${claim.subject}|${claim.predicate}|${claim.object}`;
-              const related = semantic_analysis.relatedClaimsMap[claimKey];
-              if (related && related.length > 0) {
-                for (const r of related) {
-                  const relatedText = `${r.subject} ${r.predicate.replace(/-/g, " ")} ${r.object}`;
-                  const dateStr = r.date ? ` (${r.date})` : "";
-                  const simPct = Math.round(r.similarity * 100);
-                  markdown += `  - *Related:* "${sanitizeMarkdown(relatedText)}"${dateStr} [${simPct}%]\n`;
-                }
-              }
-            }
-          }
-          if (claims.length > 5) {
-            markdown += `- *...and ${claims.length - 5} more claims*\n`;
+        // Notable threads (only show first sentence as bullets)
+        if (!isLowActivity && (summary as any).thread_summaries?.length > 0) {
+          markdown += `**Notable threads:**\n`;
+          for (const thread of (summary as any).thread_summaries.slice(0, 3)) {
+            const threadSummary = thread.summary.split(/[.!?]/)[0].trim();
+            markdown += `- ${sanitizeMarkdown(threadSummary)}\n`;
           }
           markdown += `\n`;
         }
 
-        markdown += `---\n\n`;
+        // High-confidence claims only (≥80%, show top 3)
+        const highConfidenceClaims = claims?.filter(c => (c.confidence ?? 0) >= 0.8) || [];
+        if (highConfidenceClaims.length > 0) {
+          markdown += `**Key Claims:**\n`;
+          for (const claim of highConfidenceClaims.slice(0, 3)) {
+            const verificationMark = (claim.confidence ?? 0) >= 0.9 ? "✓" : "?";
+            const claimText = `${claim.subject} ${claim.predicate.replace(/-/g, " ")} ${claim.object}`;
+            const confidencePct = Math.round((claim.confidence ?? 0) * 100);
+            markdown += `- ${verificationMark} ${sanitizeMarkdown(claimText)} *(${confidencePct}%)*\n`;
+          }
+          markdown += `\n`;
+        }
+
+        if (isLowActivity) {
+          markdown += `</details>\n\n`;
+        } else {
+          markdown += `---\n\n`;
+        }
       }
     }
 
