@@ -87,6 +87,11 @@ digest:
     min_confidence: 0.8
     max_per_post: 3
     show_verification_marks: true
+  # Importance ranking configuration
+  importance_ranking:
+    enabled: true                 # Enable AI-powered importance ranking
+    low_activity_percentile: 20   # Bottom 20% marked as low-activity (collapsed)
+    use_ai_ranking: true          # Use AI for ranking (vs heuristic-only)
 
 # Embedding configuration for semantic features
 embeddings:

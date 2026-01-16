@@ -50,6 +50,14 @@ import {
   slugify,
   claimToNaturalLanguage,
 } from "../utils/digest-format";
+import {
+  rankPostsByImportance,
+  calculateHeuristicScore,
+  shouldRankByImportance,
+  type PostForRanking,
+  type ImportanceRank,
+  type ImportanceRankingResult,
+} from "../utils/importance-ranker";
 import { getEmbeddingService, type EmbeddingConfig } from "../embeddings";
 import { ClaimDeduplicationService } from "../embeddings/deduplication";
 import { ContradictionDetectionService } from "../embeddings/contradictions/service";
@@ -152,6 +160,10 @@ const PostWithClaimsSchema = PostWithSummarySchema.extend({
     disagree_percentage: z.number().optional(),
     notable_camps: z.array(z.any()).optional(),
   }).optional(),
+  // Importance ranking fields (added during ranking step)
+  importance_score: z.number().min(0).max(100).optional(),
+  importance_rank: z.number().optional(),
+  is_low_activity: z.boolean().optional(),
 });
 
 // Type alias for use in callbacks
@@ -742,7 +754,125 @@ Extract claims as RDF triples and analyze commenter stances. Return JSON.`;
   },
 });
 
-// Step 3.5: Semantic Analysis - Find related claims and detect contradictions
+// Step 3.5: Importance Ranking - Rank posts by AI-determined importance
+const importanceRankingStep = createStep({
+  id: "importance-ranking",
+  inputSchema: z.object({
+    summaries_with_claims: z.array(PostWithClaimsSchema),
+    all_claims: z.array(WorkflowClaimSchema),
+    date: z.string(),
+  }),
+  outputSchema: z.object({
+    summaries_with_claims: z.array(PostWithClaimsSchema),
+    all_claims: z.array(WorkflowClaimSchema),
+    date: z.string(),
+  }),
+  execute: async (context: {
+    inputData?: { summaries_with_claims: PostWithClaims[]; all_claims: WorkflowClaim[]; date: string };
+    summaries_with_claims?: PostWithClaims[];
+    all_claims?: WorkflowClaim[];
+    date?: string;
+  }) => {
+    const input = context.inputData ?? context;
+    const summaries_with_claims = input.summaries_with_claims ?? [];
+    const all_claims = input.all_claims ?? [];
+    const date = input.date ?? new Date().toISOString().split("T")[0];
+    const config = loadConfig();
+
+    // Get ranking configuration
+    const rankingConfig = config.digest?.importance_ranking ?? {};
+    const rankingEnabled = rankingConfig.enabled ?? true;
+    const useAiRanking = rankingConfig.use_ai_ranking ?? true;
+    const lowActivityPercentile = rankingConfig.low_activity_percentile ?? 20;
+
+    if (!rankingEnabled || !shouldRankByImportance(summaries_with_claims.length)) {
+      console.log("\nImportance ranking: skipped (disabled or too few posts)");
+      return { summaries_with_claims, all_claims, date };
+    }
+
+    console.log(`\nRanking ${summaries_with_claims.length} posts by importance...`);
+
+    try {
+      // Prepare posts for ranking
+      const postsForRanking: PostForRanking[] = summaries_with_claims.map((item) => ({
+        id: item.post.id,
+        subreddit: item.subreddit,
+        title: item.post.title,
+        score: item.post.score,
+        num_comments: item.post.num_comments,
+        summary: item.summary.summary,
+        sentiment: item.summary.sentiment,
+        controversy_level: item.summary.controversy_level,
+        information_density: item.summary.information_density,
+        key_topics: item.summary.key_topics,
+      }));
+
+      let rankingResult: ImportanceRankingResult;
+
+      if (useAiRanking) {
+        // Use AI-powered ranking
+        const agent = getSummarizerAgent(); // Reuse summarizer agent for ranking
+        rankingResult = await rankPostsByImportance(agent, postsForRanking, lowActivityPercentile);
+      } else {
+        // Use heuristic-only ranking
+        const heuristicRankings = postsForRanking
+          .map((post) => ({
+            post_id: post.id,
+            importance_score: calculateHeuristicScore(post),
+            rank: 0,
+            is_low_activity: false,
+          }))
+          .sort((a, b) => b.importance_score - a.importance_score)
+          .map((r, i) => ({ ...r, rank: i + 1 }));
+
+        // Calculate low activity threshold
+        const scores = heuristicRankings.map((r) => r.importance_score).sort((a, b) => a - b);
+        const thresholdIndex = Math.max(0, Math.floor(scores.length * (lowActivityPercentile / 100)) - 1);
+        const lowActivityThreshold = scores[thresholdIndex] ?? 0;
+
+        for (const ranking of heuristicRankings) {
+          ranking.is_low_activity = ranking.importance_score <= lowActivityThreshold;
+        }
+
+        rankingResult = {
+          rankings: heuristicRankings,
+          low_activity_threshold: lowActivityThreshold,
+        };
+      }
+
+      // Build ranking map for quick lookup
+      const rankingMap = new Map<string, ImportanceRank>();
+      for (const ranking of rankingResult.rankings) {
+        rankingMap.set(ranking.post_id, ranking);
+      }
+
+      // Apply rankings to posts and sort by importance
+      const rankedPosts = summaries_with_claims
+        .map((item) => {
+          const ranking = rankingMap.get(item.post.id);
+          return {
+            ...item,
+            importance_score: ranking?.importance_score ?? 50,
+            importance_rank: ranking?.rank ?? summaries_with_claims.length,
+            is_low_activity: ranking?.is_low_activity ?? false,
+          };
+        })
+        .sort((a, b) => (a.importance_rank ?? Infinity) - (b.importance_rank ?? Infinity));
+
+      const lowActivityCount = rankedPosts.filter((p) => p.is_low_activity).length;
+      console.log(`  Ranked ${rankedPosts.length} posts, ${lowActivityCount} marked as low-activity`);
+      console.log(`  Low activity threshold: score <= ${rankingResult.low_activity_threshold}`);
+
+      return { summaries_with_claims: rankedPosts, all_claims, date };
+    } catch (error) {
+      console.error("Importance ranking failed:", error);
+      // Return original order on failure
+      return { summaries_with_claims, all_claims, date };
+    }
+  },
+});
+
+// Step 3.75: Semantic Analysis - Find related claims and detect contradictions
 const semanticAnalysisStep = createStep({
   id: "semantic-analysis",
   inputSchema: z.object({
@@ -1037,23 +1167,29 @@ const generateDigestStep = createStep({
     let markdown = `# My Slow News - ${date}\n\n`;
     markdown += `*${humanDate} • ${postCount} posts • ${subredditCount} subreddits • ${claimCount} claims extracted*\n\n`;
 
-    // Generate "What Matters" table
+    // Generate "What Matters" table (posts are already sorted by importance from ranking step)
     if (summaries_with_claims.length > 0) {
       markdown += `## What Matters\n\n`;
       markdown += `| Priority | Discussion | Why It Matters |\n`;
       markdown += `|----------|------------|----------------|\n`;
 
-      // Show top discussions (max 6)
-      for (const item of summaries_with_claims.slice(0, 6)) {
+      // Show top discussions (max 6) - already sorted by importance rank
+      // Skip low-activity posts in the "What Matters" section
+      const topDiscussions = summaries_with_claims
+        .filter(item => !item.is_low_activity)
+        .slice(0, 6);
+
+      for (const item of topDiscussions) {
+        const importanceScore = item.importance_score ?? 50;
         const sentiment = item.summary.sentiment;
         const controversy = item.summary.controversy_level;
-        const commentCount = item.post.num_comments || 0;
 
-        // Determine priority indicator based on controversy and activity
+        // Determine priority indicator based on importance score (from AI ranking)
+        // Falls back to heuristics if ranking wasn't performed
         let priority = "🟢";
-        if (controversy === "high" || sentiment === "negative" || commentCount > 100) {
+        if (importanceScore >= 70 || controversy === "high" || sentiment === "negative") {
           priority = "🔴";
-        } else if (controversy === "medium" || sentiment === "mixed" || commentCount > 50) {
+        } else if (importanceScore >= 45 || controversy === "medium" || sentiment === "mixed") {
           priority = "🟡";
         }
 
@@ -1131,9 +1267,11 @@ const generateDigestStep = createStep({
         const slug = slugify(post.title);
         const safeTitle = sanitizeMarkdown(post.title);
 
-        // Determine if this is a low-activity post (collapse it)
+        // Use importance ranking's is_low_activity flag (from AI ranking step)
+        // Falls back to heuristic if ranking wasn't performed
         const commentCount = post.num_comments || 0;
-        const isLowActivity = commentCount < 10 && summary.information_density === "sparse";
+        const isLowActivity = item.is_low_activity ??
+          (commentCount < 10 && summary.information_density === "sparse");
 
         if (isLowActivity) {
           markdown += `<details>\n<summary><strong><a href="${post.permalink}">${safeTitle}</a></strong> • ${post.score}↑ • ${commentCount} comments</summary>\n\n`;
@@ -1473,6 +1611,7 @@ export const digestWorkflow = createWorkflow({
   .then(fetchContentStep)
   .then(summarizeStep)
   .then(extractClaimsStep)
+  .then(importanceRankingStep)  // Rank posts by AI-determined importance
   .then(semanticAnalysisStep)
   .then(generateDigestStep)
   .then(saveToDatabaseStep)

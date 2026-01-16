@@ -100,6 +100,15 @@ export const ConfigSchema = z.object({
       max_per_post: z.number().default(3),
       show_verification_marks: z.boolean().default(true),
     }).optional().default({}),
+    // Importance ranking configuration
+    importance_ranking: z.object({
+      // Enable AI-powered importance ranking
+      enabled: z.boolean().default(true),
+      // Bottom X percentile identified as low-activity (collapsed)
+      low_activity_percentile: z.number().min(0).max(50).default(20),
+      // Use AI for ranking (vs heuristic-only)
+      use_ai_ranking: z.boolean().default(true),
+    }).optional().default({}),
   }).optional().default({}),
   // Semantic features configuration
   semantic: z.object({
