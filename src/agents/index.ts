@@ -198,6 +198,19 @@ export function createExtractorAgent(model?: string): Agent {
   });
 }
 
+// Re-export What Matters Synthesizer for convenience
+export {
+  createWhatMattersAgent,
+  synthesizeWhatMatters,
+  formatWhatMattersMarkdown,
+  shouldSynthesizeWhatMatters,
+  type WhatMattersInput,
+  type WhatMattersPriority,
+  type WhatMattersItem,
+  type WhatMattersSynthesis,
+  PRIORITY_ICONS,
+} from "../utils/what-matters-synthesizer";
+
 // Default agent instances for backward compatibility
 export const summarizerAgent = createSummarizerAgent();
 export const extractorAgent = createExtractorAgent();
