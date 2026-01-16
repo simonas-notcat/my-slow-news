@@ -39,6 +39,12 @@ import {
   formatControversyAnalysisMarkdown,
 } from "../utils/cot-summarizer";
 import {
+  narrateStory,
+  shouldNarrateStory,
+  formatStoryMarkdown,
+  type StoryNarratorInput,
+} from "../utils/story-narrator";
+import {
   sanitizeMarkdown,
   formatHumanDate,
   slugify,
@@ -114,6 +120,9 @@ const WorkflowSummarySchema = z.object({
   controversy_level: z.enum(["none", "low", "medium", "high"]),
   information_density: z.enum(["sparse", "moderate", "rich"]),
   missing_context: z.array(z.string()),
+  // Story narrative - generated separately after summarization
+  story_narrative: z.string().optional(),
+  story_hook: z.string().optional(),
 });
 
 // Schema for claim - with required fields (defaults are applied during parsing)
@@ -334,6 +343,8 @@ const summarizeStep = createStep({
           controversy_level: "none" | "low" | "medium" | "high";
           information_density: "sparse" | "moderate" | "rich";
           missing_context: string[];
+          story_narrative?: string;
+          story_hook?: string;
         };
 
         // Route to appropriate summarization strategy
@@ -517,6 +528,47 @@ Return a JSON response with: summary, notable_comments, sentiment, key_topics, c
             information_density: summary.information_density ?? "moderate",
             missing_context: summary.missing_context ?? [],
           };
+        }
+
+        // Generate story narrative if post meets engagement threshold
+        if (shouldNarrateStory(post.score, post.num_comments, normalizedSummary.information_density)) {
+          try {
+            console.log(`  [Story] Generating narrative for: ${post.title.slice(0, 50)}...`);
+
+            const storyInput: StoryNarratorInput = {
+              title: post.title,
+              content: post.selftext || "",
+              author: post.author,
+              subreddit,
+              score: post.score,
+              num_comments: post.num_comments,
+              summary: normalizedSummary.summary,
+              sentiment: normalizedSummary.sentiment,
+              key_topics: normalizedSummary.key_topics,
+              controversy_level: normalizedSummary.controversy_level,
+              notable_comments: normalizedSummary.notable_comments,
+            };
+
+            // Check budget before story narration
+            const storyInputTokens = estimateTokens(JSON.stringify(storyInput));
+            const storyOutputEstimate = 200; // Story narratives are short
+            const storyBudgetCheck = checkBudget(storyInputTokens, storyOutputEstimate, config.llm.daily_budget_usd);
+
+            if (storyBudgetCheck.allowed) {
+              const storyResult = await narrateStory(agent, storyInput);
+              recordUsage(storyInputTokens, estimateTokens(storyResult.narrative));
+
+              normalizedSummary.story_narrative = storyResult.narrative;
+              if (storyResult.hook) {
+                normalizedSummary.story_hook = storyResult.hook;
+              }
+            } else {
+              console.log(`  [Story] Skipping narrative (budget limit)`);
+            }
+          } catch (storyError) {
+            console.warn(`  [Story] Failed to generate narrative: ${storyError}`);
+            // Continue without story narrative - it's optional
+          }
         }
 
         summaries.push({
@@ -1088,6 +1140,16 @@ const generateDigestStep = createStep({
             : "";
 
           markdown += `**${post.score}↑** • ${commentCount} comments • ${confidencePct}% confidence${controversyBadge}\n\n`;
+        }
+
+        // Display "The Story" narrative section if available (only for non-low-activity posts)
+        if (!isLowActivity && summary.story_narrative) {
+          if (summary.story_hook) {
+            markdown += `**The Story:** *${sanitizeMarkdown(summary.story_hook)}*\n\n`;
+            markdown += `${sanitizeMarkdown(summary.story_narrative)}\n\n`;
+          } else {
+            markdown += `**The Story:** ${sanitizeMarkdown(summary.story_narrative)}\n\n`;
+          }
         }
 
         markdown += `${sanitizeMarkdown(summary.summary)}\n\n`;

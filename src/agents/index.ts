@@ -211,6 +211,16 @@ export {
   PRIORITY_ICONS,
 } from "../utils/what-matters-synthesizer";
 
+// Re-export Story Narrator for convenience
+export {
+  createStoryNarratorAgent,
+  narrateStory,
+  formatStoryMarkdown,
+  shouldNarrateStory,
+  type StoryNarratorInput,
+  type StoryNarratorOutput,
+} from "../utils/story-narrator";
+
 // Default agent instances for backward compatibility
 export const summarizerAgent = createSummarizerAgent();
 export const extractorAgent = createExtractorAgent();
