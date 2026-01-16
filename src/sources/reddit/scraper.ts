@@ -131,7 +131,7 @@ function extractPost(document: Document, permalink: string): RedditPost {
 
   // Extract URL (for link posts)
   const urlElement = postElement.querySelector("a.title");
-  const url = urlElement?.getAttribute("href") || `https://reddit.com${permalink}`;
+  const url = urlElement?.getAttribute("href") || `https://old.reddit.com${permalink}`;
 
   return {
     id,
@@ -139,8 +139,8 @@ function extractPost(document: Document, permalink: string): RedditPost {
     title,
     selftext,
     author,
-    url: `https://reddit.com${permalink}`,
-    permalink: `https://reddit.com${permalink}`,
+    url: `https://old.reddit.com${permalink}`,
+    permalink: `https://old.reddit.com${permalink}`,
     score,
     num_comments,
     created_utc,
