@@ -132,6 +132,8 @@ const WorkflowClaimSchema = z.object({
   object: z.string(),
   confidence: z.number().min(0).max(1),
   source_stance: z.enum(["agrees", "disagrees", "neutral", "uncertain"]),
+  // Verification status: derived from confidence (>=90% = verified, <90% = unverified)
+  verification_status: z.enum(["verified", "unverified"]).optional(),
 });
 
 // Schema for post with summary
@@ -690,13 +692,20 @@ Extract claims as RDF triples and analyze commenter stances. Return JSON.`;
 
         // Normalize claims to ensure all fields have values (Zod defaults are applied during parsing)
         type SourceStance = "agrees" | "disagrees" | "neutral" | "uncertain";
-        const normalizedClaims = (extracted.claims || []).map((c: { subject: string; predicate: string; object: string; confidence?: number; source_stance?: SourceStance }) => ({
-          subject: c.subject,
-          predicate: c.predicate,
-          object: c.object,
-          confidence: c.confidence ?? 0.5,
-          source_stance: c.source_stance ?? ("neutral" as SourceStance),
-        }));
+        type VerificationStatus = "verified" | "unverified";
+        const normalizedClaims = (extracted.claims || []).map((c: { subject: string; predicate: string; object: string; confidence?: number; source_stance?: SourceStance }) => {
+          const confidence = c.confidence ?? 0.5;
+          // Verification status: >= 90% confidence = verified, < 90% = unverified
+          const verification_status: VerificationStatus = confidence >= 0.9 ? "verified" : "unverified";
+          return {
+            subject: c.subject,
+            predicate: c.predicate,
+            object: c.object,
+            confidence,
+            source_stance: c.source_stance ?? ("neutral" as SourceStance),
+            verification_status,
+          };
+        });
 
         summariesWithClaims.push({
           ...item,
@@ -1170,15 +1179,24 @@ const generateDigestStep = createStep({
           markdown += `\n`;
         }
 
-        // High-confidence claims only (≥80%, show top 3)
-        const highConfidenceClaims = claims?.filter(c => (c.confidence ?? 0) >= 0.8) || [];
+        // Get claims config settings
+        const claimsConfig = config.digest?.claims ?? {};
+        const claimsMinConfidence = claimsConfig.min_confidence ?? 0.8;
+        const claimsMaxPerPost = claimsConfig.max_per_post ?? 3;
+        const showVerificationMarks = claimsConfig.show_verification_marks ?? true;
+
+        // High-confidence claims only (filtered by config)
+        const highConfidenceClaims = claims?.filter(c => (c.confidence ?? 0) >= claimsMinConfidence) || [];
         if (highConfidenceClaims.length > 0) {
           markdown += `**Key Claims:**\n`;
-          for (const claim of highConfidenceClaims.slice(0, 3)) {
-            const verificationMark = (claim.confidence ?? 0) >= 0.9 ? "✓" : "?";
+          for (const claim of highConfidenceClaims.slice(0, claimsMaxPerPost)) {
+            // Use verification_status field (set during extraction) to determine marker
+            const isVerified = claim.verification_status === "verified";
+            const verificationMark = showVerificationMarks ? (isVerified ? "✓" : "?") : "";
+            const verificationPrefix = showVerificationMarks ? `${verificationMark} ` : "";
             const claimText = `${claim.subject} ${claim.predicate.replace(/-/g, " ")} ${claim.object}`;
             const confidencePct = Math.round((claim.confidence ?? 0) * 100);
-            markdown += `- ${verificationMark} ${sanitizeMarkdown(claimText)} *(${confidencePct}%)*\n`;
+            markdown += `- ${verificationPrefix}${sanitizeMarkdown(claimText)} *(${confidencePct}%)*\n`;
           }
           markdown += `\n`;
         }

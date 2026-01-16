@@ -250,6 +250,9 @@ export interface DigestRecord {
 // Stance values
 export type Stance = "agrees" | "disagrees" | "neutral" | "uncertain" | "not-stated";
 
+// Verification status for claims
+export type VerificationStatus = "verified" | "unverified";
+
 // Extracted claim from LLM
 export interface ExtractedClaim {
   subject: string;
@@ -257,6 +260,7 @@ export interface ExtractedClaim {
   object: string;
   confidence: number;
   source_stance: Stance;
+  verification_status?: VerificationStatus;
 }
 
 // Post summary from LLM
