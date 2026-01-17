@@ -1,0 +1,221 @@
+{
+  "name": "Refined Digest Template Implementation",
+  "branchName": "feat/better-digest",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add digest config section",
+      "description": "As a developer, I want to add a new 'digest' section to config.yaml so that refined digest settings can be configured (format, max_topics, low_activity_percentile, notable_threads, claims limits).",
+      "acceptanceCriteria": [
+        "config.yaml has new 'digest' section with format, what_matters, top_discussions, notable_threads, and claims settings",
+        "Config parser loads and validates new digest settings",
+        "Default values work when settings are omitted"
+      ],
+      "priority": 1,
+      "passes": true,
+      "dependsOn": [],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "US-002",
+      "title": "Create What Matters Synthesizer AI prompt",
+      "description": "As a user, I want the digest to analyze all posts and generate a 'What Matters' summary table with priority icons, topic, impact (~50 chars), and status (community + official response).",
+      "acceptanceCriteria": [
+        "New AI prompt accepts all summarized posts as input",
+        "Output is JSON array with priority (urgent/developing/informational), topic, impact, status fields",
+        "Identifies 3-6 most significant topics across all posts",
+        "Priority icons mapped: urgent=red, developing=yellow, informational=green"
+      ],
+      "priority": 1,
+      "passes": true,
+      "dependsOn": [
+        "US-001"
+      ],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "US-003",
+      "title": "Create Story Narrator AI prompt",
+      "description": "As a user, I want each post to have a 'The Story' narrative section that explains what happened and why it matters in 2-4 sentences.",
+      "acceptanceCriteria": [
+        "New AI prompt takes post + comments + existing summary as input",
+        "Outputs 2-4 sentence narrative paragraph",
+        "Narrative explains what happened and why it matters",
+        "Integrated into summarization step"
+      ],
+      "priority": 2,
+      "passes": true,
+      "dependsOn": [
+        "US-001"
+      ],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "US-004",
+      "title": "Create Notable Thread Identifier AI prompt",
+      "description": "As a user, I want each post to show 2-4 notable conversation threads that highlight interesting discussions.",
+      "acceptanceCriteria": [
+        "New AI prompt analyzes comment threads",
+        "Outputs 2-4 notable thread descriptions as bullet points",
+        "Threads describe specific insights or developments (not generic summaries)",
+        "Respects max_per_post config setting"
+      ],
+      "priority": 2,
+      "passes": true,
+      "dependsOn": [
+        "US-001"
+      ],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "US-005",
+      "title": "Add claim verification status to extraction",
+      "description": "As a user, I want claims to show verification markers (check or question mark) and confidence percentages so I can assess reliability.",
+      "acceptanceCriteria": [
+        "Claim extraction includes verification_status (verified/unverified) and confidence percentage",
+        "Format: verified claims show checkmark, unverified show question mark",
+        "Top 3-5 claims shown per post based on config",
+        "Confidence percentage displayed next to each claim"
+      ],
+      "priority": 2,
+      "passes": true,
+      "dependsOn": [
+        "US-001"
+      ],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "US-006",
+      "title": "Implement post importance ranking",
+      "description": "As a user, I want posts ranked by AI-determined importance (not just score) so the most significant discussions appear first.",
+      "acceptanceCriteria": [
+        "AI ranks posts by importance considering multiple factors",
+        "Posts ordered by importance rank in output",
+        "Bottom 20% (configurable) identified for low-activity section",
+        "Ranking persists through digest generation"
+      ],
+      "priority": 2,
+      "passes": true,
+      "dependsOn": [
+        "US-002",
+        "US-003"
+      ],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "US-007",
+      "title": "Create digest-formatter utility",
+      "description": "As a developer, I want a new digest-formatter.ts utility that formats all digest sections to match the TEMPLATE-REFINED.md structure.",
+      "acceptanceCriteria": [
+        "New file src/utils/digest-formatter.ts created",
+        "Formats 'What Matters' table with priority icons",
+        "Formats 'Top Discussions' section with proper headers and metadata",
+        "Formats per-post sections (The Story, Notable Threads, High-Confidence Claims)",
+        "Formats 'Low-Activity Posts' as collapsible details section"
+      ],
+      "priority": 1,
+      "passes": true,
+      "dependsOn": [
+        "US-001"
+      ],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "US-008",
+      "title": "Enhance Conflicting Viewpoints generation",
+      "description": "As a user, I want the Conflicting Viewpoints section to show more specific opposing viewpoints per topic, synthesized from posts with different stances.",
+      "acceptanceCriteria": [
+        "AI produces specific, contrasting viewpoints (not generic)",
+        "Table format with Topic, View A, View B columns",
+        "Viewpoints sourced from posts discussing same topic with different stances",
+        "Enhanced from current basic implementation"
+      ],
+      "priority": 3,
+      "passes": true,
+      "dependsOn": [
+        "US-002"
+      ],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "US-009",
+      "title": "Update Emerging Patterns confidence display",
+      "description": "As a user, I want Emerging Patterns to show AI-stated confidence percentages in the standard format.",
+      "acceptanceCriteria": [
+        "Confidence percentage comes from AI's stated confidence",
+        "Format matches: **Pattern Name** (N% confidence) with description on next line",
+        "Patterns display correctly in final digest"
+      ],
+      "priority": 3,
+      "passes": true,
+      "dependsOn": [
+        "US-007"
+      ],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "US-010",
+      "title": "Implement Low-Activity Posts collapsible section",
+      "description": "As a user, I want low-activity posts (bottom 20% by importance) shown in a collapsible section with abbreviated format.",
+      "acceptanceCriteria": [
+        "Bottom 20% of posts by importance go to Low-Activity section",
+        "Uses HTML <details> tag for collapsible display",
+        "Abbreviated format: title, score, one-line summary",
+        "Percentile threshold configurable via config"
+      ],
+      "priority": 3,
+      "passes": true,
+      "dependsOn": [
+        "US-006",
+        "US-007"
+      ],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "US-011",
+      "title": "Update digest workflow with new steps",
+      "description": "As a developer, I want the digest workflow updated to include the new steps: summarize-with-story, extract-verified-claims, synthesize-what-matters, rank-posts, generate-refined-digest.",
+      "acceptanceCriteria": [
+        "Workflow follows: fetch -> summarize-with-story -> extract-verified-claims -> synthesize-what-matters -> rank-posts -> generate-refined-digest -> save",
+        "All new AI prompts integrated into appropriate steps",
+        "Workflow produces complete refined digest output",
+        "Uses old.reddit.com URLs for post links"
+      ],
+      "priority": 1,
+      "passes": true,
+      "dependsOn": [
+        "US-002",
+        "US-003",
+        "US-004",
+        "US-005",
+        "US-006",
+        "US-007"
+      ],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "US-012",
+      "title": "End-to-end test: refined digest matches template",
+      "description": "As a developer, I want to verify the generated digest matches TEMPLATE-REFINED.md structure with all sections present and correctly formatted.",
+      "acceptanceCriteria": [
+        "Generated digest has all template sections in correct order",
+        "What Matters table displays correctly with icons",
+        "Top Discussions posts have The Story, Notable Threads, High-Confidence Claims",
+        "Low-Activity Posts section is collapsible",
+        "Conflicting Viewpoints and Emerging Patterns formatted correctly"
+      ],
+      "priority": 1,
+      "passes": true,
+      "dependsOn": [
+        "US-008",
+        "US-009",
+        "US-010",
+        "US-011"
+      ],
+      "completionNotes": "Completed by agent"
+    }
+  ],
+  "metadata": {
+    "updatedAt": "2026-01-16T22:18:30.318Z"
+  }
+}
