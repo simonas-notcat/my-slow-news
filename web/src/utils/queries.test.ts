@@ -170,6 +170,13 @@ describe("buildClaimDetailQuery", () => {
     expect(result.sql).toContain("content_author_stance");
     expect(result.sql).toContain("commenter_agree_pct");
   });
+
+  test("uses record ID for claim_stances lookup", () => {
+    const result = buildClaimDetailQuery("claim:789");
+
+    // Should use $claim.id (record ID) not $claimId (string) for claim_stances lookup
+    expect(result.sql).toContain("WHERE claim = $claim.id");
+  });
 });
 
 describe("buildPredicatesQuery", () => {

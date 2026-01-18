@@ -6,7 +6,7 @@ export interface ClaimListItem {
   predicate: string;
   object: string;
   confidence: number;
-  extracted_at: Date | string;
+  extracted_at?: Date | string;
   user_stance?: UserStance;
 }
 
@@ -16,7 +16,7 @@ export interface ClaimDetail {
   predicate: string;
   object: string;
   confidence: number;
-  extracted_at: Date | string;
+  extracted_at?: Date | string;
 
   // Predicate info (from predicate table)
   predicate_description?: string;
@@ -58,8 +58,6 @@ export interface PredicateOption {
   predicate: string;
   count: number;
 }
-
-export type Screen = "list" | "detail";
 
 export interface DatabaseConfig {
   url: string;

@@ -156,6 +156,13 @@ describe("queries", () => {
       expect(result.sql).toContain("user_stance");
       expect(result.sql).toContain("user_note");
     });
+
+    test("uses record ID for claim_stances lookup", () => {
+      const result = buildClaimDetailQuery("claim:test");
+
+      // Should use $claim.id (record ID) not $claimId (string) for claim_stances lookup
+      expect(result.sql).toContain("WHERE claim = $claim.id");
+    });
   });
 
   describe("buildPredicatesQuery", () => {

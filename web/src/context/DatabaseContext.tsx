@@ -5,6 +5,7 @@ import {
   useState,
   useRef,
   useCallback,
+  useMemo,
   type ReactNode,
 } from "react";
 import Surreal from "surrealdb";
@@ -78,16 +79,30 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     return () => {
       if (dbRef.current) {
-        dbRef.current.close();
-        dbRef.current = null;
+        const db = dbRef.current;
+        dbRef.current = null; // Clear ref synchronously
+
+        // Fire-and-forget async cleanup
+        void (async () => {
+          try {
+            await db.close();
+          } catch (error) {
+            // Log errors during cleanup for better visibility during development
+            console.warn("DB cleanup error:", error);
+          }
+        })();
       }
     };
   }, []);
 
+  // Memoize context value to prevent unnecessary re-renders
+  const value = useMemo(
+    () => ({ db, isConnected, error, connect, disconnect }),
+    [db, isConnected, error, connect, disconnect]
+  );
+
   return (
-    <DatabaseContext.Provider
-      value={{ db, isConnected, error, connect, disconnect }}
-    >
+    <DatabaseContext.Provider value={value}>
       {children}
     </DatabaseContext.Provider>
   );

@@ -198,6 +198,41 @@ export function createExtractorAgent(model?: string): Agent {
   });
 }
 
+// Re-export What Matters Synthesizer for convenience
+export {
+  createWhatMattersAgent,
+  synthesizeWhatMatters,
+  formatWhatMattersMarkdown,
+  shouldSynthesizeWhatMatters,
+  type WhatMattersInput,
+  type WhatMattersPriority,
+  type WhatMattersItem,
+  type WhatMattersSynthesis,
+  PRIORITY_ICONS,
+} from "../utils/what-matters-synthesizer";
+
+// Re-export Story Narrator for convenience
+export {
+  createStoryNarratorAgent,
+  narrateStory,
+  formatStoryMarkdown,
+  shouldNarrateStory,
+  type StoryNarratorInput,
+  type StoryNarratorOutput,
+} from "../utils/story-narrator";
+
+// Re-export Notable Thread Identifier for convenience
+export {
+  createNotableThreadAgent,
+  identifyNotableThreads,
+  formatNotableThreadsMarkdown,
+  shouldIdentifyNotableThreads,
+  THREAD_TYPE_ICONS,
+  type NotableThreadInput,
+  type NotableThreadItem,
+  type NotableThreadOutput,
+} from "../utils/notable-thread-identifier";
+
 // Default agent instances for backward compatibility
 export const summarizerAgent = createSummarizerAgent();
 export const extractorAgent = createExtractorAgent();

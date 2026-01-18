@@ -122,6 +122,36 @@ npm run predicates -- --all
 npm run dev
 ```
 
+## Web Deployment
+
+The web explorer (`web/`) is a React-based web interface that can be deployed to Vercel with SurrealDB Cloud.
+
+### Quick Deploy
+
+1. **Set up SurrealDB Cloud instance** (free tier available at https://surrealdb.com/cloud)
+   - Create a free tier instance (1GB storage limit)
+   - Note your connection URL: `wss://your-instance.surreal.cloud/rpc`
+   - Set namespace: `myslownews`, database: `main`
+
+2. **Initialize database schema** (from root directory):
+   ```bash
+   export DATABASE_URL=wss://your-instance.surreal.cloud/rpc
+   npm run db:init
+   ```
+
+3. **Deploy to Vercel**:
+   - **Automated**: Push to `main` branch (GitHub Actions auto-deploys)
+   - **Manual**: `cd web && vercel deploy --prod`
+   - **Dashboard**: Import repository at https://vercel.com/new
+
+4. **Access the web app**: Open the deployed URL and enter your SurrealDB credentials
+
+See [web/README.md](web/README.md) for complete deployment guide including:
+- SurrealDB Cloud setup instructions
+- GitHub Actions automation
+- Security considerations
+- Troubleshooting
+
 ## Environment Variables
 
 The project uses [dotenv](https://www.npmjs.com/package/dotenv) to automatically load environment variables from a `.env` file.
@@ -142,7 +172,7 @@ SURREALDB_PASSWORD=your-password
 ```bash
 # Database URL - overrides config.yaml database.url if set
 # Useful for switching between local and cloud SurrealDB instances
-DATABASE_URL=ws://localhost:8000/rpc           # Local
+DATABASE_URL=ws://localhost:8666/rpc           # Local
 # DATABASE_URL=wss://your-db.surreal.cloud/rpc  # Cloud
 
 # OpenAI API key (required if using OpenAI embeddings)
@@ -174,7 +204,7 @@ output:
   format: markdown
 
 database:
-  url: ws://localhost:8000/rpc
+  url: ws://localhost:8666/rpc
   namespace: myslownews
   database: main
 

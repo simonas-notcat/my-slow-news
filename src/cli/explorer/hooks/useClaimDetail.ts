@@ -11,14 +11,17 @@ export function useClaimDetail(claimId: string | null) {
   const fetchDetail = useCallback(async () => {
     if (!db || !isConnected || !claimId) return;
 
+    dispatch({ type: "SET_ERROR", error: null });
     dispatch({ type: "SET_LOADING", loading: true });
 
     try {
       const query = buildClaimDetailQuery(claimId);
       const result = await db.query<any[]>(query.sql, query.params);
 
-      // The RETURN statement gives us the result directly
-      const detail = result[result.length - 1];
+      // The RETURN statement returns an array with a single element
+      // result[0-2] are the LET statements, result[3] is the RETURN
+      const returnResult = result[result.length - 1];
+      const detail = Array.isArray(returnResult) ? returnResult[0] : returnResult;
 
       if (detail) {
         const claimDetail: ClaimDetail = {
@@ -44,6 +47,7 @@ export function useClaimDetail(claimId: string | null) {
         dispatch({ type: "SET_ERROR", error: "Claim not found" });
       }
     } catch (err) {
+      console.error("Error fetching claim detail:", err);
       dispatch({ type: "SET_ERROR", error: (err as Error).message });
     }
   }, [db, isConnected, claimId]);

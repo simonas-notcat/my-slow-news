@@ -1,8 +1,12 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 import "../env";
+import { validateEnv } from "../config/env";
 import { program } from "commander";
 import { loadConfig } from "../config";
 import { getDb, closeDb } from "../db";
+
+// Validate environment variables before proceeding
+validateEnv();
 
 program
   .name("predicates")

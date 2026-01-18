@@ -23,7 +23,7 @@ describe("ConfigSchema", () => {
         format: "markdown" as const,
       },
       database: {
-        url: "ws://localhost:8000/rpc",
+        url: "ws://localhost:8666/rpc",
         namespace: "myslownews",
         database: "main",
       },
@@ -61,7 +61,7 @@ describe("ConfigSchema", () => {
     expect(result.sources.reddit.posts_per_subreddit).toBe(5);
     expect(result.sources.reddit.lookback_hours).toBe(24);
     expect(result.llm.daily_budget_usd).toBe(5.0);
-    expect(result.database.url).toBe("ws://localhost:8000/rpc");
+    expect(result.database.url).toBe("ws://localhost:8666/rpc");
     expect(result.database.namespace).toBe("myslownews");
     // New summarization defaults
     expect(result.summarization.hierarchical.enabled).toBe(true);

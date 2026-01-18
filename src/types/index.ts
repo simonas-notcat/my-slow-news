@@ -21,7 +21,7 @@ export const ConfigSchema = z.object({
     format: z.literal("markdown"),
   }),
   database: z.object({
-    url: z.string().default("ws://localhost:8000/rpc"),
+    url: z.string().default("ws://localhost:8666/rpc"),
     namespace: z.string().default("myslownews"),
     database: z.string().default("main"),
   }),
@@ -74,6 +74,41 @@ export const ConfigSchema = z.object({
       base_url: z.string().default("http://localhost:11434"),
       model: z.string().default("nomic-embed-text"),
     }).optional(),
+  }).optional().default({}),
+  // Digest generation configuration
+  digest: z.object({
+    format: z.enum(["markdown", "html"]).default("markdown"),
+    // "What Matters" section configuration
+    what_matters: z.object({
+      max_topics: z.number().default(6),
+      low_activity_percentile: z.number().default(10),  // Posts below this percentile are "low activity"
+    }).optional().default({}),
+    // Top discussions section
+    top_discussions: z.object({
+      max_posts: z.number().default(10),
+      min_score: z.number().default(10),
+      min_comments: z.number().default(5),
+    }).optional().default({}),
+    // Notable threads within discussions
+    notable_threads: z.object({
+      max_per_post: z.number().default(3),
+      min_score: z.number().default(5),
+    }).optional().default({}),
+    // Claims display settings
+    claims: z.object({
+      min_confidence: z.number().default(0.8),
+      max_per_post: z.number().default(3),
+      show_verification_marks: z.boolean().default(true),
+    }).optional().default({}),
+    // Importance ranking configuration
+    importance_ranking: z.object({
+      // Enable AI-powered importance ranking
+      enabled: z.boolean().default(true),
+      // Bottom X percentile identified as low-activity (collapsed)
+      low_activity_percentile: z.number().min(0).max(50).default(20),
+      // Use AI for ranking (vs heuristic-only)
+      use_ai_ranking: z.boolean().default(true),
+    }).optional().default({}),
   }).optional().default({}),
   // Semantic features configuration
   semantic: z.object({
@@ -224,6 +259,9 @@ export interface DigestRecord {
 // Stance values
 export type Stance = "agrees" | "disagrees" | "neutral" | "uncertain" | "not-stated";
 
+// Verification status for claims
+export type VerificationStatus = "verified" | "unverified";
+
 // Extracted claim from LLM
 export interface ExtractedClaim {
   subject: string;
@@ -231,6 +269,7 @@ export interface ExtractedClaim {
   object: string;
   confidence: number;
   source_stance: Stance;
+  verification_status?: VerificationStatus;
 }
 
 // Post summary from LLM

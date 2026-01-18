@@ -34,7 +34,10 @@
     "web": "npm run dev --prefix web",
     "web:build": "npm run build --prefix web",
     "web:preview": "npm run preview --prefix web",
-    "web:install": "npm install --prefix web"
+    "web:install": "npm install --prefix web",
+    "web:deploy": "cd web && ./scripts/deploy.sh",
+    "web:verify": "cd web && ./scripts/verify-build.sh",
+    "web:typecheck": "npm run typecheck --prefix web"
   },
   "dependencies": {
     "@mastra/core": "^0.24.9",

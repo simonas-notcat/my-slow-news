@@ -1,6 +1,10 @@
 import "../env";
+import { validateEnv } from "../config/env";
 import { loadConfig } from "../config";
 import { getDb, closeDb } from "./index";
+
+// Validate environment variables before proceeding
+validateEnv();
 import { SCHEMA, SEED_PREDICATES } from "./schema";
 import {
   migrateVectorSchema,

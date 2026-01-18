@@ -5,6 +5,7 @@ import { useAppContext } from "../context/AppContext.js";
 import { useDatabase } from "../context/DatabaseContext.js";
 import { useClaimDetail } from "../hooks/useClaimDetail.js";
 import { LoadingSpinner } from "../components/LoadingSpinner.js";
+import { EmptyState } from "../components/EmptyState.js";
 import { saveStance } from "../utils/stanceOperations.js";
 import {
   formatConfidence,
@@ -20,7 +21,7 @@ export const ClaimDetailScreen: React.FC = () => {
   const [noteInput, setNoteInput] = useState("");
   const [pendingStance, setPendingStance] = useState<UserStance | null>(null);
 
-  useClaimDetail(state.selectedClaimId);
+  const { refetch } = useClaimDetail(state.selectedClaimId);
 
   const handleStance = useCallback(
     async (stance: UserStance) => {
@@ -96,7 +97,28 @@ export const ClaimDetailScreen: React.FC = () => {
     }
   });
 
-  if (state.isLoading || !state.claimDetail) {
+  if (state.isLoading) {
+    return <LoadingSpinner message="Loading claim details..." />;
+  }
+
+  if (state.error && !state.claimDetail) {
+    return (
+      <Box flexDirection="column" paddingY={2}>
+        <EmptyState
+          type="connection-error"
+          title="Failed to load claim details"
+          description="We couldn't fetch this claim."
+          errorDetails={state.error}
+          actions={[
+            { key: "r", label: "Retry", onSelect: refetch },
+            { key: "b", label: "Back to list", onSelect: () => dispatch({ type: "GO_BACK" }) },
+          ]}
+        />
+      </Box>
+    );
+  }
+
+  if (!state.claimDetail) {
     return <LoadingSpinner message="Loading claim details..." />;
   }
 

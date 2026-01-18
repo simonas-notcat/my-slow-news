@@ -39,11 +39,25 @@ import {
   formatControversyAnalysisMarkdown,
 } from "../utils/cot-summarizer";
 import {
+  narrateStory,
+  shouldNarrateStory,
+  formatStoryMarkdown,
+  type StoryNarratorInput,
+} from "../utils/story-narrator";
+import {
   sanitizeMarkdown,
   formatHumanDate,
   slugify,
   claimToNaturalLanguage,
 } from "../utils/digest-format";
+import {
+  rankPostsByImportance,
+  calculateHeuristicScore,
+  shouldRankByImportance,
+  type PostForRanking,
+  type ImportanceRank,
+  type ImportanceRankingResult,
+} from "../utils/importance-ranker";
 import { getEmbeddingService, type EmbeddingConfig } from "../embeddings";
 import { ClaimDeduplicationService } from "../embeddings/deduplication";
 import { ContradictionDetectionService } from "../embeddings/contradictions/service";
@@ -114,6 +128,9 @@ const WorkflowSummarySchema = z.object({
   controversy_level: z.enum(["none", "low", "medium", "high"]),
   information_density: z.enum(["sparse", "moderate", "rich"]),
   missing_context: z.array(z.string()),
+  // Story narrative - generated separately after summarization
+  story_narrative: z.string().optional(),
+  story_hook: z.string().optional(),
 });
 
 // Schema for claim - with required fields (defaults are applied during parsing)
@@ -123,6 +140,8 @@ const WorkflowClaimSchema = z.object({
   object: z.string(),
   confidence: z.number().min(0).max(1),
   source_stance: z.enum(["agrees", "disagrees", "neutral", "uncertain"]),
+  // Verification status: derived from confidence (>=90% = verified, <90% = unverified)
+  verification_status: z.enum(["verified", "unverified"]).optional(),
 });
 
 // Schema for post with summary
@@ -141,6 +160,10 @@ const PostWithClaimsSchema = PostWithSummarySchema.extend({
     disagree_percentage: z.number().optional(),
     notable_camps: z.array(z.any()).optional(),
   }).optional(),
+  // Importance ranking fields (added during ranking step)
+  importance_score: z.number().min(0).max(100).optional(),
+  importance_rank: z.number().optional(),
+  is_low_activity: z.boolean().optional(),
 });
 
 // Type alias for use in callbacks
@@ -334,6 +357,8 @@ const summarizeStep = createStep({
           controversy_level: "none" | "low" | "medium" | "high";
           information_density: "sparse" | "moderate" | "rich";
           missing_context: string[];
+          story_narrative?: string;
+          story_hook?: string;
         };
 
         // Route to appropriate summarization strategy
@@ -519,6 +544,47 @@ Return a JSON response with: summary, notable_comments, sentiment, key_topics, c
           };
         }
 
+        // Generate story narrative if post meets engagement threshold
+        if (shouldNarrateStory(post.score, post.num_comments, normalizedSummary.information_density)) {
+          try {
+            console.log(`  [Story] Generating narrative for: ${post.title.slice(0, 50)}...`);
+
+            const storyInput: StoryNarratorInput = {
+              title: post.title,
+              content: post.selftext || "",
+              author: post.author,
+              subreddit,
+              score: post.score,
+              num_comments: post.num_comments,
+              summary: normalizedSummary.summary,
+              sentiment: normalizedSummary.sentiment,
+              key_topics: normalizedSummary.key_topics,
+              controversy_level: normalizedSummary.controversy_level,
+              notable_comments: normalizedSummary.notable_comments,
+            };
+
+            // Check budget before story narration
+            const storyInputTokens = estimateTokens(JSON.stringify(storyInput));
+            const storyOutputEstimate = 200; // Story narratives are short
+            const storyBudgetCheck = checkBudget(storyInputTokens, storyOutputEstimate, config.llm.daily_budget_usd);
+
+            if (storyBudgetCheck.allowed) {
+              const storyResult = await narrateStory(agent, storyInput);
+              recordUsage(storyInputTokens, estimateTokens(storyResult.narrative));
+
+              normalizedSummary.story_narrative = storyResult.narrative;
+              if (storyResult.hook) {
+                normalizedSummary.story_hook = storyResult.hook;
+              }
+            } else {
+              console.log(`  [Story] Skipping narrative (budget limit)`);
+            }
+          } catch (storyError) {
+            console.warn(`  [Story] Failed to generate narrative: ${storyError}`);
+            // Continue without story narrative - it's optional
+          }
+        }
+
         summaries.push({
           subreddit,
           post,
@@ -638,13 +704,20 @@ Extract claims as RDF triples and analyze commenter stances. Return JSON.`;
 
         // Normalize claims to ensure all fields have values (Zod defaults are applied during parsing)
         type SourceStance = "agrees" | "disagrees" | "neutral" | "uncertain";
-        const normalizedClaims = (extracted.claims || []).map((c: { subject: string; predicate: string; object: string; confidence?: number; source_stance?: SourceStance }) => ({
-          subject: c.subject,
-          predicate: c.predicate,
-          object: c.object,
-          confidence: c.confidence ?? 0.5,
-          source_stance: c.source_stance ?? ("neutral" as SourceStance),
-        }));
+        type VerificationStatus = "verified" | "unverified";
+        const normalizedClaims = (extracted.claims || []).map((c: { subject: string; predicate: string; object: string; confidence?: number; source_stance?: SourceStance }) => {
+          const confidence = c.confidence ?? 0.5;
+          // Verification status: >= 90% confidence = verified, < 90% = unverified
+          const verification_status: VerificationStatus = confidence >= 0.9 ? "verified" : "unverified";
+          return {
+            subject: c.subject,
+            predicate: c.predicate,
+            object: c.object,
+            confidence,
+            source_stance: c.source_stance ?? ("neutral" as SourceStance),
+            verification_status,
+          };
+        });
 
         summariesWithClaims.push({
           ...item,
@@ -681,7 +754,125 @@ Extract claims as RDF triples and analyze commenter stances. Return JSON.`;
   },
 });
 
-// Step 3.5: Semantic Analysis - Find related claims and detect contradictions
+// Step 3.5: Importance Ranking - Rank posts by AI-determined importance
+const importanceRankingStep = createStep({
+  id: "importance-ranking",
+  inputSchema: z.object({
+    summaries_with_claims: z.array(PostWithClaimsSchema),
+    all_claims: z.array(WorkflowClaimSchema),
+    date: z.string(),
+  }),
+  outputSchema: z.object({
+    summaries_with_claims: z.array(PostWithClaimsSchema),
+    all_claims: z.array(WorkflowClaimSchema),
+    date: z.string(),
+  }),
+  execute: async (context: {
+    inputData?: { summaries_with_claims: PostWithClaims[]; all_claims: WorkflowClaim[]; date: string };
+    summaries_with_claims?: PostWithClaims[];
+    all_claims?: WorkflowClaim[];
+    date?: string;
+  }) => {
+    const input = context.inputData ?? context;
+    const summaries_with_claims = input.summaries_with_claims ?? [];
+    const all_claims = input.all_claims ?? [];
+    const date = input.date ?? new Date().toISOString().split("T")[0];
+    const config = loadConfig();
+
+    // Get ranking configuration
+    const rankingConfig = config.digest?.importance_ranking ?? {};
+    const rankingEnabled = rankingConfig.enabled ?? true;
+    const useAiRanking = rankingConfig.use_ai_ranking ?? true;
+    const lowActivityPercentile = rankingConfig.low_activity_percentile ?? 20;
+
+    if (!rankingEnabled || !shouldRankByImportance(summaries_with_claims.length)) {
+      console.log("\nImportance ranking: skipped (disabled or too few posts)");
+      return { summaries_with_claims, all_claims, date };
+    }
+
+    console.log(`\nRanking ${summaries_with_claims.length} posts by importance...`);
+
+    try {
+      // Prepare posts for ranking
+      const postsForRanking: PostForRanking[] = summaries_with_claims.map((item) => ({
+        id: item.post.id,
+        subreddit: item.subreddit,
+        title: item.post.title,
+        score: item.post.score,
+        num_comments: item.post.num_comments,
+        summary: item.summary.summary,
+        sentiment: item.summary.sentiment,
+        controversy_level: item.summary.controversy_level,
+        information_density: item.summary.information_density,
+        key_topics: item.summary.key_topics,
+      }));
+
+      let rankingResult: ImportanceRankingResult;
+
+      if (useAiRanking) {
+        // Use AI-powered ranking
+        const agent = getSummarizerAgent(); // Reuse summarizer agent for ranking
+        rankingResult = await rankPostsByImportance(agent, postsForRanking, lowActivityPercentile);
+      } else {
+        // Use heuristic-only ranking
+        const heuristicRankings = postsForRanking
+          .map((post) => ({
+            post_id: post.id,
+            importance_score: calculateHeuristicScore(post),
+            rank: 0,
+            is_low_activity: false,
+          }))
+          .sort((a, b) => b.importance_score - a.importance_score)
+          .map((r, i) => ({ ...r, rank: i + 1 }));
+
+        // Calculate low activity threshold
+        const scores = heuristicRankings.map((r) => r.importance_score).sort((a, b) => a - b);
+        const thresholdIndex = Math.max(0, Math.floor(scores.length * (lowActivityPercentile / 100)) - 1);
+        const lowActivityThreshold = scores[thresholdIndex] ?? 0;
+
+        for (const ranking of heuristicRankings) {
+          ranking.is_low_activity = ranking.importance_score <= lowActivityThreshold;
+        }
+
+        rankingResult = {
+          rankings: heuristicRankings,
+          low_activity_threshold: lowActivityThreshold,
+        };
+      }
+
+      // Build ranking map for quick lookup
+      const rankingMap = new Map<string, ImportanceRank>();
+      for (const ranking of rankingResult.rankings) {
+        rankingMap.set(ranking.post_id, ranking);
+      }
+
+      // Apply rankings to posts and sort by importance
+      const rankedPosts = summaries_with_claims
+        .map((item) => {
+          const ranking = rankingMap.get(item.post.id);
+          return {
+            ...item,
+            importance_score: ranking?.importance_score ?? 50,
+            importance_rank: ranking?.rank ?? summaries_with_claims.length,
+            is_low_activity: ranking?.is_low_activity ?? false,
+          };
+        })
+        .sort((a, b) => (a.importance_rank ?? Infinity) - (b.importance_rank ?? Infinity));
+
+      const lowActivityCount = rankedPosts.filter((p) => p.is_low_activity).length;
+      console.log(`  Ranked ${rankedPosts.length} posts, ${lowActivityCount} marked as low-activity`);
+      console.log(`  Low activity threshold: score <= ${rankingResult.low_activity_threshold}`);
+
+      return { summaries_with_claims: rankedPosts, all_claims, date };
+    } catch (error) {
+      console.error("Importance ranking failed:", error);
+      // Return original order on failure
+      return { summaries_with_claims, all_claims, date };
+    }
+  },
+});
+
+// Step 3.75: Semantic Analysis - Find related claims and detect contradictions
 const semanticAnalysisStep = createStep({
   id: "semantic-analysis",
   inputSchema: z.object({
@@ -782,7 +973,8 @@ const semanticAnalysisStep = createStep({
 
         for (let i = 0; i < validClaims.length; i++) {
           const claim = validClaims[i];
-          const embedding = embeddings[i];
+          const embeddingResult = embeddings[i];
+          const embedding = embeddingResult.embedding; // Extract array from result object
           const claimKey = `${claim.subject}|${claim.predicate}|${claim.object}`;
 
           // Query for similar existing claims
@@ -852,7 +1044,8 @@ const semanticAnalysisStep = createStep({
         // For each new claim, check for contradictions with existing claims
         for (let i = 0; i < validClaims.length && semanticAnalysis.contradictions.length < maxContradictions; i++) {
           const claim = validClaims[i];
-          const embedding = embeddings[i];
+          const embeddingResult = embeddings[i];
+          const embedding = embeddingResult.embedding; // Extract array from result object
 
           // Find similar existing claims that might contradict
           const [candidates] = await db.query<[Array<{
@@ -974,23 +1167,40 @@ const generateDigestStep = createStep({
     let markdown = `# My Slow News - ${date}\n\n`;
     markdown += `*${humanDate} • ${postCount} posts • ${subredditCount} subreddits • ${claimCount} claims extracted*\n\n`;
 
-    // Generate TL;DR section
+    // Generate "What Matters" table (posts are already sorted by importance from ranking step)
     if (summaries_with_claims.length > 0) {
-      markdown += `## TL;DR\n\n`;
-      for (const item of summaries_with_claims.slice(0, 5)) {
+      markdown += `## What Matters\n\n`;
+      markdown += `| Priority | Discussion | Why It Matters |\n`;
+      markdown += `|----------|------------|----------------|\n`;
+
+      // Show top discussions (max 6) - already sorted by importance rank
+      // Skip low-activity posts in the "What Matters" section
+      const topDiscussions = summaries_with_claims
+        .filter(item => !item.is_low_activity)
+        .slice(0, 6);
+
+      for (const item of topDiscussions) {
+        const importanceScore = item.importance_score ?? 50;
         const sentiment = item.summary.sentiment;
-        const emoji = sentiment === "positive" ? "🔥" :
-                     sentiment === "negative" ? "⚠️" :
-                     sentiment === "mixed" ? "🔄" : "📰";
-        // Create a one-line summary from the first sentence (sanitized)
+        const controversy = item.summary.controversy_level;
+
+        // Determine priority indicator based on importance score (from AI ranking)
+        // Falls back to heuristics if ranking wasn't performed
+        let priority = "🟢";
+        if (importanceScore >= 70 || controversy === "high" || sentiment === "negative") {
+          priority = "🔴";
+        } else if (importanceScore >= 45 || controversy === "medium" || sentiment === "mixed") {
+          priority = "🟡";
+        }
+
+        const safeTitle = sanitizeMarkdown(item.post.title);
+        const slug = slugify(item.post.title);
         const firstSentence = item.summary.summary.split(/[.!?]/)[0].trim();
-        const shortSummary = sanitizeMarkdown(
-          firstSentence.length > 100 ? firstSentence.slice(0, 100) + "..." : firstSentence
+        const impact = sanitizeMarkdown(
+          firstSentence.length > 80 ? firstSentence.slice(0, 80) + "..." : firstSentence
         );
-        const safeTitle = sanitizeMarkdown(
-          item.post.title.slice(0, 60) + (item.post.title.length > 60 ? "..." : "")
-        );
-        markdown += `- ${emoji} **${safeTitle}** — ${shortSummary}\n`;
+
+        markdown += `| ${priority} | [${safeTitle}](#${slug}) | ${impact} |\n`;
       }
       markdown += `\n---\n\n`;
     }
@@ -1056,58 +1266,84 @@ const generateDigestStep = createStep({
         const { post, summary, claims } = item;
         const slug = slugify(post.title);
         const safeTitle = sanitizeMarkdown(post.title);
-        const safeAuthor = sanitizeMarkdown(post.author);
 
-        markdown += `### [${safeTitle}](${post.permalink}) {#${slug}}\n\n`;
+        // Use importance ranking's is_low_activity flag (from AI ranking step)
+        // Falls back to heuristic if ranking wasn't performed
+        const commentCount = post.num_comments || 0;
+        const isLowActivity = item.is_low_activity ??
+          (commentCount < 10 && summary.information_density === "sparse");
 
-        // Build metadata line with quality indicators
-        const confidencePct = Math.round((summary.confidence ?? 0.7) * 100);
-        const controversyBadge = summary.controversy_level !== "none"
-          ? ` • **Controversy:** ${summary.controversy_level}`
-          : "";
-        const densityIndicator = summary.information_density === "sparse" ? " ⚠️" : "";
+        if (isLowActivity) {
+          markdown += `<details>\n<summary><strong><a href="${post.permalink}">${safeTitle}</a></strong> • ${post.score}↑ • ${commentCount} comments</summary>\n\n`;
+        } else {
+          markdown += `### [${safeTitle}](${post.permalink}) {#${slug}}\n\n`;
 
-        markdown += `**u/${safeAuthor}** • Score: ${post.score} • Confidence: ${confidencePct}%${controversyBadge}${densityIndicator}\n\n`;
+          // Simplified metadata line
+          const confidencePct = Math.round((summary.confidence ?? 0.7) * 100);
+          const controversyBadge = summary.controversy_level === "high"
+            ? ` • ⚠️ **Controversial**`
+            : summary.controversy_level === "medium"
+            ? ` • ⚡ Debate`
+            : "";
+
+          markdown += `**${post.score}↑** • ${commentCount} comments • ${confidencePct}% confidence${controversyBadge}\n\n`;
+        }
+
+        // Display "The Story" narrative section if available (only for non-low-activity posts)
+        if (!isLowActivity && summary.story_narrative) {
+          if (summary.story_hook) {
+            markdown += `**The Story:** *${sanitizeMarkdown(summary.story_hook)}*\n\n`;
+            markdown += `${sanitizeMarkdown(summary.story_narrative)}\n\n`;
+          } else {
+            markdown += `**The Story:** ${sanitizeMarkdown(summary.story_narrative)}\n\n`;
+          }
+        }
+
         markdown += `${sanitizeMarkdown(summary.summary)}\n\n`;
 
-        // Show missing context warnings
-        if (summary.missing_context && summary.missing_context.length > 0) {
-          const safeContext = summary.missing_context.map(c => sanitizeMarkdown(c)).join(", ");
+        // Show missing context warnings (only for moderate/low confidence)
+        if ((summary.confidence ?? 0.7) < 0.75 && summary.missing_context && summary.missing_context.length > 0) {
+          const safeContext = summary.missing_context.slice(0, 2).map(c => sanitizeMarkdown(c)).join(", ");
           markdown += `> ⚠️ **Missing context:** ${safeContext}\n\n`;
         }
 
-        // Key topics as tags
-        if (summary.key_topics?.length > 0) {
-          markdown += `**Topics:** ${summary.key_topics.map(t => `\`${sanitizeMarkdown(t)}\``).join(" ")}\n\n`;
-        }
-
-        // Claims in natural language format with related claims
-        if (claims?.length > 0) {
-          markdown += `**Key Claims:**\n`;
-          for (const claim of claims.slice(0, 5)) { // Limit to top 5 claims
-            markdown += `- ${claimToNaturalLanguage(claim)}\n`;
-
-            // Show related claims if available
-            if (semantic_analysis?.relatedClaimsMap) {
-              const claimKey = `${claim.subject}|${claim.predicate}|${claim.object}`;
-              const related = semantic_analysis.relatedClaimsMap[claimKey];
-              if (related && related.length > 0) {
-                for (const r of related) {
-                  const relatedText = `${r.subject} ${r.predicate.replace(/-/g, " ")} ${r.object}`;
-                  const dateStr = r.date ? ` (${r.date})` : "";
-                  const simPct = Math.round(r.similarity * 100);
-                  markdown += `  - *Related:* "${sanitizeMarkdown(relatedText)}"${dateStr} [${simPct}%]\n`;
-                }
-              }
-            }
-          }
-          if (claims.length > 5) {
-            markdown += `- *...and ${claims.length - 5} more claims*\n`;
+        // Notable threads (only show first sentence as bullets)
+        if (!isLowActivity && (summary as any).thread_summaries?.length > 0) {
+          markdown += `**Notable threads:**\n`;
+          for (const thread of (summary as any).thread_summaries.slice(0, 3)) {
+            const threadSummary = thread.summary.split(/[.!?]/)[0].trim();
+            markdown += `- ${sanitizeMarkdown(threadSummary)}\n`;
           }
           markdown += `\n`;
         }
 
-        markdown += `---\n\n`;
+        // Get claims config settings
+        const claimsConfig = config.digest?.claims ?? {};
+        const claimsMinConfidence = claimsConfig.min_confidence ?? 0.8;
+        const claimsMaxPerPost = claimsConfig.max_per_post ?? 3;
+        const showVerificationMarks = claimsConfig.show_verification_marks ?? true;
+
+        // High-confidence claims only (filtered by config)
+        const highConfidenceClaims = claims?.filter(c => (c.confidence ?? 0) >= claimsMinConfidence) || [];
+        if (highConfidenceClaims.length > 0) {
+          markdown += `**Key Claims:**\n`;
+          for (const claim of highConfidenceClaims.slice(0, claimsMaxPerPost)) {
+            // Use verification_status field (set during extraction) to determine marker
+            const isVerified = claim.verification_status === "verified";
+            const verificationMark = showVerificationMarks ? (isVerified ? "✓" : "?") : "";
+            const verificationPrefix = showVerificationMarks ? `${verificationMark} ` : "";
+            const claimText = `${claim.subject} ${claim.predicate.replace(/-/g, " ")} ${claim.object}`;
+            const confidencePct = Math.round((claim.confidence ?? 0) * 100);
+            markdown += `- ${verificationPrefix}${sanitizeMarkdown(claimText)} *(${confidencePct}%)*\n`;
+          }
+          markdown += `\n`;
+        }
+
+        if (isLowActivity) {
+          markdown += `</details>\n\n`;
+        } else {
+          markdown += `---\n\n`;
+        }
       }
     }
 
@@ -1375,6 +1611,7 @@ export const digestWorkflow = createWorkflow({
   .then(fetchContentStep)
   .then(summarizeStep)
   .then(extractClaimsStep)
+  .then(importanceRankingStep)  // Rank posts by AI-determined importance
   .then(semanticAnalysisStep)
   .then(generateDigestStep)
   .then(saveToDatabaseStep)
