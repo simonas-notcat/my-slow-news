@@ -12,6 +12,7 @@ import { EmptyState } from "./components/EmptyState";
 import { ConnectionDialog } from "./components/ConnectionDialog";
 import { Toast } from "./components/Toast";
 import { NotFound } from "./components/NotFound";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ClaimDetailScreen } from "./screens/ClaimDetailScreen";
 
 function ClaimsListScreen() {
@@ -114,12 +115,14 @@ function MainApp() {
 
 export function App() {
   return (
-    <DatabaseProvider>
-      <BrowserRouter>
-        <AppProvider>
-          <MainApp />
-        </AppProvider>
-      </BrowserRouter>
-    </DatabaseProvider>
+    <ErrorBoundary>
+      <DatabaseProvider>
+        <BrowserRouter>
+          <AppProvider>
+            <MainApp />
+          </AppProvider>
+        </BrowserRouter>
+      </DatabaseProvider>
+    </ErrorBoundary>
   );
 }

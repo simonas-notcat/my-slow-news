@@ -7,7 +7,14 @@ const envSchema = z.object({
   SURREALDB_PASSWORD: z.string().min(1, "SURREALDB_PASSWORD is required"),
 
   // Optional environment variables
-  DATABASE_URL: z.string().url().optional(),
+  // DATABASE_URL must be a valid WebSocket URL (ws:// or wss://)
+  DATABASE_URL: z
+    .string()
+    .refine(
+      (url) => url.startsWith("ws://") || url.startsWith("wss://"),
+      { message: "DATABASE_URL must be a WebSocket URL (ws:// or wss://)" }
+    )
+    .optional(),
   OPENAI_API_KEY: z.string().optional(),
 });
 

@@ -12,9 +12,46 @@
  * identified for low-activity section.
  */
 
-import type { Agent } from "@mastra/core/agent";
+import { Agent } from "@mastra/core/agent";
 import { z } from "zod";
 import { parseLLMJson } from "./parse-llm-json";
+
+/**
+ * Scoring constants for heuristic importance calculation.
+ * These define the weight and limits for each scoring factor.
+ */
+const SCORING_CONSTANTS = {
+  /** Maximum points from engagement metrics (score + comments) */
+  MAX_ENGAGEMENT_POINTS: 30,
+  /** Multiplier for log10 of post score in engagement calculation */
+  SCORE_LOG_MULTIPLIER: 5,
+  /** Multiplier for log10 of comment count in engagement calculation */
+  COMMENTS_LOG_MULTIPLIER: 5,
+
+  /** Points awarded for high controversy level */
+  CONTROVERSY_HIGH_POINTS: 15,
+  /** Points awarded for medium controversy level */
+  CONTROVERSY_MEDIUM_POINTS: 8,
+  /** Points awarded for low controversy level */
+  CONTROVERSY_LOW_POINTS: 3,
+
+  /** Points awarded for rich information density */
+  INFO_DENSITY_RICH_POINTS: 10,
+  /** Points awarded for moderate information density */
+  INFO_DENSITY_MODERATE_POINTS: 5,
+
+  /** Points awarded for negative sentiment (often indicates urgent news) */
+  SENTIMENT_NEGATIVE_POINTS: 10,
+  /** Points awarded for mixed sentiment */
+  SENTIMENT_MIXED_POINTS: 5,
+
+  /** Normalization multiplier to scale raw score to 0-100 range */
+  NORMALIZATION_MULTIPLIER: 1.5,
+  /** Maximum possible importance score */
+  MAX_SCORE: 100,
+  /** Minimum possible importance score */
+  MIN_SCORE: 0,
+} as const;
 
 /**
  * Input type for posts to be ranked
@@ -131,13 +168,13 @@ Example:
   ]
 }`;
 
+/** Default model for importance ranking */
+const DEFAULT_MODEL = "anthropic/claude-sonnet-4-20250514";
+
 /**
  * Creates an importance ranking agent
  */
 export function createImportanceRankerAgent(model?: string): Agent {
-  const { Agent } = require("@mastra/core/agent");
-  const DEFAULT_MODEL = "anthropic/claude-sonnet-4-20250514";
-
   return new Agent({
     name: "importance-ranker",
     instructions: IMPORTANCE_RANKING_INSTRUCTIONS,
@@ -152,36 +189,43 @@ export function createImportanceRankerAgent(model?: string): Agent {
 export function calculateHeuristicScore(post: PostForRanking): number {
   let score = 0;
 
-  // Engagement score (0-30)
-  const engagementRaw = Math.log10(Math.max(1, post.score)) * 5 +
-    Math.log10(Math.max(1, post.num_comments)) * 5;
-  score += Math.min(30, engagementRaw);
+  // Engagement score (0-MAX_ENGAGEMENT_POINTS)
+  const engagementRaw =
+    Math.log10(Math.max(1, post.score)) * SCORING_CONSTANTS.SCORE_LOG_MULTIPLIER +
+    Math.log10(Math.max(1, post.num_comments)) * SCORING_CONSTANTS.COMMENTS_LOG_MULTIPLIER;
+  score += Math.min(SCORING_CONSTANTS.MAX_ENGAGEMENT_POINTS, engagementRaw);
 
-  // Controversy bonus (0-15)
+  // Controversy bonus
   if (post.controversy_level === "high") {
-    score += 15;
+    score += SCORING_CONSTANTS.CONTROVERSY_HIGH_POINTS;
   } else if (post.controversy_level === "medium") {
-    score += 8;
+    score += SCORING_CONSTANTS.CONTROVERSY_MEDIUM_POINTS;
   } else if (post.controversy_level === "low") {
-    score += 3;
+    score += SCORING_CONSTANTS.CONTROVERSY_LOW_POINTS;
   }
 
-  // Information density bonus (0-10)
+  // Information density bonus
   if (post.information_density === "rich") {
-    score += 10;
+    score += SCORING_CONSTANTS.INFO_DENSITY_RICH_POINTS;
   } else if (post.information_density === "moderate") {
-    score += 5;
+    score += SCORING_CONSTANTS.INFO_DENSITY_MODERATE_POINTS;
   }
 
-  // Negative sentiment often indicates urgent news (0-10)
+  // Negative sentiment often indicates urgent news
   if (post.sentiment === "negative") {
-    score += 10;
+    score += SCORING_CONSTANTS.SENTIMENT_NEGATIVE_POINTS;
   } else if (post.sentiment === "mixed") {
-    score += 5;
+    score += SCORING_CONSTANTS.SENTIMENT_MIXED_POINTS;
   }
 
   // Normalize to 0-100
-  return Math.min(100, Math.max(0, Math.round(score * 1.5)));
+  return Math.min(
+    SCORING_CONSTANTS.MAX_SCORE,
+    Math.max(
+      SCORING_CONSTANTS.MIN_SCORE,
+      Math.round(score * SCORING_CONSTANTS.NORMALIZATION_MULTIPLIER)
+    )
+  );
 }
 
 /**

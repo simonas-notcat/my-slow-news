@@ -72,7 +72,6 @@ digest:
   # "What Matters" section configuration
   what_matters:
     max_topics: 6
-    low_activity_percentile: 10  # Posts below this percentile are "low activity"
   # Top discussions section
   top_discussions:
     max_posts: 10
@@ -90,7 +89,7 @@ digest:
   # Importance ranking configuration
   importance_ranking:
     enabled: true                 # Enable AI-powered importance ranking
-    low_activity_percentile: 20   # Bottom 20% marked as low-activity (collapsed)
+    low_activity_percentile: 20   # Bottom 20% marked as low-activity (collapsed in digest)
     use_ai_ranking: true          # Use AI for ranking (vs heuristic-only)
 
 # Embedding configuration for semantic features

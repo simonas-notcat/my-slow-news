@@ -5,11 +5,14 @@
  * conversation threads that highlight interesting discussions.
  */
 
-import type { Agent } from "@mastra/core/agent";
+import { Agent } from "@mastra/core/agent";
 import { z } from "zod";
 import { parseLLMJson } from "./parse-llm-json";
 import type { ThreadNode } from "./thread-builder";
 import { formatThread } from "./thread-builder";
+
+/** Default model for notable thread identification */
+const DEFAULT_MODEL = "anthropic/claude-sonnet-4-20250514";
 
 /**
  * Input type for thread identification
@@ -275,9 +278,6 @@ Thread 2 - u/early_adopter (+21):
  * Creates a Notable Thread Identifier agent with the specified model
  */
 export function createNotableThreadAgent(model?: string): Agent {
-  const { Agent } = require("@mastra/core/agent");
-  const DEFAULT_MODEL = "anthropic/claude-sonnet-4-20250514";
-
   return new Agent({
     name: "notable-thread-identifier",
     instructions: NOTABLE_THREAD_INSTRUCTIONS,

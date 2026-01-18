@@ -5,10 +5,13 @@
  * summary table identifying the most significant topics of the day.
  */
 
-import type { Agent } from "@mastra/core/agent";
+import { Agent } from "@mastra/core/agent";
 import { z } from "zod";
 import { parseLLMJson } from "./parse-llm-json";
 import { sanitizeMarkdown } from "./digest-format";
+
+/** Default model for what matters synthesis */
+const DEFAULT_MODEL = "anthropic/claude-sonnet-4-20250514";
 
 /**
  * Input type for post summaries to analyze
@@ -224,9 +227,6 @@ Summary: A team shares their experience leaving TypeScript after 3 years...
  * Creates a What Matters Synthesizer agent with the specified model
  */
 export function createWhatMattersAgent(model?: string): Agent {
-  const { Agent } = require("@mastra/core/agent");
-  const DEFAULT_MODEL = "anthropic/claude-sonnet-4-20250514";
-
   return new Agent({
     name: "what-matters-synthesizer",
     instructions: WHAT_MATTERS_INSTRUCTIONS,

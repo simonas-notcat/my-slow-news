@@ -5,9 +5,12 @@
  * what happened and why it matters in 2-4 sentences.
  */
 
-import type { Agent } from "@mastra/core/agent";
+import { Agent } from "@mastra/core/agent";
 import { z } from "zod";
 import { parseLLMJson } from "./parse-llm-json";
+
+/** Default model for story narration */
+const DEFAULT_MODEL = "anthropic/claude-sonnet-4-20250514";
 
 /**
  * Input type for story narration
@@ -172,9 +175,6 @@ Notable Comments:
  * Creates a Story Narrator agent with the specified model
  */
 export function createStoryNarratorAgent(model?: string): Agent {
-  const { Agent } = require("@mastra/core/agent");
-  const DEFAULT_MODEL = "anthropic/claude-sonnet-4-20250514";
-
   return new Agent({
     name: "story-narrator",
     instructions: STORY_NARRATOR_INSTRUCTIONS,
